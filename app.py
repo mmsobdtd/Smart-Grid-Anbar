@@ -1,39 +1,3 @@
-import streamlit as st
-import pandas as pd
-import time
-
-# 1. إعداد الصفحة لتكون احترافية وعريضة
-st.set_page_config(page_title="Smart Grid Shared Dashboard", layout="wide")
-
-# 2. إنشاء الذاكرة المشتركة (Shared Database)
-# هذه الدالة تضمن أن البيانات مخزنة في السيرفر ويراها الطلاب الأربعة في نفس الوقت
-@st.cache_resource
-def get_global_data():
-    return {"log": [], "traffic_count": 0}
-
-global_data = get_global_data()
-
-# --- التصميم العلوي ---
-st.title("🔌 النظام المركزي لمراقبة الشبكة الذكية")
-st.markdown("---")
-
-# --- الجانب (بوابة الطلاب والتحكم) ---
-st.sidebar.header("📥 بوابة إدخال البيانات")
-user_id = st.sidebar.selectbox("اختر المحطة (الطالب):", ["طالب 1", "طالب 2", "طالب 3", "طالب 4"])
-val = st.sidebar.number_input("أدخل قيمة الجهد (V):", 0, 400, 220)
-
-# مفتاح البروتوكول (عندك أنت فقط كمسؤول)
-st.sidebar.markdown("---")
-protocol_on = st.sidebar.toggle("تفعيل بروتوكول الأولوية", value=True)
-
-if st.sidebar.button("إرسال البيانات"):
-    global_data["traffic_count"] += 1
-    is_critical = val > 250
-    
-    # منطق الانهيار (تأخير متعمد إذا طفأ البروتوكول وزاد الضغط)
-    if not protocol_on and global_data["traffic_count"] > 5:
-        with st.sidebar:
-            with st.spinner('⏳ زحام بيانات... الشبكة ثقيلة'):
                 time.sleep(1.5)
     
     # تنفيذ البروتوكول
