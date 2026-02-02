@@ -2,60 +2,73 @@ import streamlit as st
 import pandas as pd
 import time
 
-# إعداد واجهة البرنامج
-st.set_page_config(page_title="نظام الشبكة الذكية المشترك", layout="wide")
+st.set_page_config(page_title="Smart Grid Stress Test", layout="wide")
 
-# --- وظيفة التخزين المشترك (هذه هي اللي تجعل البيانات تظهر عند الجميع) ---
+# الذاكرة المشتركة
 @st.cache_resource
-def get_shared_log():
-    return []  # مصفوفة فارغة تعيش في ذاكرة السيرفر
+def get_shared_data():
+    return {"log": [], "count": 0}
 
-shared_log = get_shared_log()
+data = get_shared_data()
 
-st.title("🔌 نظام مراقبة الشبكة الذكية (المراقبة المركزية)")
+st.title("⚡ نظام إدارة الأحمال والبروتوكولات الذكية")
 
-# --- بوابة إدخال الطلاب (في الجانب) ---
-st.sidebar.header("بوابة إدخال البيانات")
-user_id = st.sidebar.selectbox("اختر المحطة (الطالب):", ["طالب 1", "طالب 2", "طالب 3", "طالب 4"])
-value = st.sidebar.number_input("أدخل قيمة الجهد (Voltage):", min_value=0, max_value=400, value=220)
+# --- لوحة التحكم الخاصة بك (المدير) ---
+st.sidebar.header("🕹️ لوحة تحكم المهندس")
+protocol_active = st.sidebar.toggle("تفعيل بروتوكول الأولوية (Priority Protocol)", value=False)
+clear_btn = st.sidebar.button("تصفير النظام")
 
-if st.sidebar.button("إرسال البيانات"):
-    priority = "عالية (🚨)" if value > 250 else "عادية (✅)"
-    timestamp = time.strftime("%H:%M:%S")
-    # إضافة البيانات للذاكرة المشتركة
-    shared_log.append({
-        "الوقت": timestamp,
-        "المحطة": user_id,
-        "القيمة": value,
-        "الأولوية": priority
-    })
-    st.sidebar.success(f"تم الإرسال بنجاح من {user_id}")
-    time.sleep(1)
-    st.rerun() # تحديث الصفحة تلقائياً لرؤية البيانات الجديدة
+if clear_btn:
+    data["log"].clear()
+    data["count"] = 0
+    st.rerun()
 
-# --- واجهة المراقبة الأساسية (شاشتك أنت) ---
-if shared_log:
-    col1, col2 = st.columns([1, 1])
+# --- واجهة إدخال الطلاب ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("📥 بوابة إدخال الطالب")
+user_id = st.sidebar.selectbox("المحطة:", ["طالب 1", "طالب 2", "طالب 3", "طالب 4"])
+val = st.sidebar.number_input("الجهد (V):", 0, 400, 220)
+
+if st.sidebar.button("إرسال الآن"):
+    data["count"] += 1  # زيادة عداد المحاولات (الضغط)
     
-    with col1:
-        st.subheader("📊 سجل البيانات الموحد (Real-time Log)")
-        # تحويل القائمة المشتركة إلى DataFrame للعرض
-        df = pd.DataFrame(shared_log).sort_index(ascending=False)
-        st.dataframe(df.style.highlight_max(axis=0, color='red', subset=['القيمة']), use_container_width=True)
-
-    with col2:
-        st.subheader("📈 الرسم البياني التفاعلي")
-        chart_data = pd.DataFrame(shared_log)
-        # رسم خط بياني لكل محطة بشكل منفصل (اختياري) أو للكل
-        st.line_chart(chart_data.set_index('الوقت')['القيمة'])
-
-    if st.button("تصفير النظام (Reset)"):
-        shared_log.clear()
+    # منطق البروتوكول
+    is_critical = val > 250
+    
+    if protocol_active and not is_critical:
+        st.sidebar.warning("⚠️ البروتوكول رفض البيانات العادية لتقليل ضغط الشبكة")
+    else:
+        timestamp = time.strftime("%H:%M:%S")
+        priority = "🚨 عالية" if is_critical else "✅ عادية"
+        data["log"].append({"الوقت": timestamp, "المحطة": user_id, "القيمة": val, "الأولوية": priority})
+        st.sidebar.success("تم تمرير البيانات بنجاح")
         st.rerun()
-else:
-    st.info("بانتظار دخول الطلاب وإرسال البيانات... (افتح القائمة الجانبية للإرسال)")
 
-# إضافة زر للتحديث اليدوي
-if st.button("تحديث الشاشة الآن 🔄"):
+# --- شاشة العرض الأساسية (المقارنة) ---
+col1, col2 = st.columns([1, 1])
+
+with col1:
+    st.subheader("📡 حالة الشبكة (Network Status)")
+    traffic_load = data["count"]
+    
+    # إظهار مؤشر الضغط
+    if traffic_load > 10 and not protocol_active:
+        st.error(f"⚠️ حالة انهيار: ضغط بيانات عالٍ ({traffic_load} طلبات) بدون بروتوكول!")
+    elif protocol_active:
+        st.success(f"💎 الشبكة مستقرة: البروتوكول ينظم المرور ({len(data['log'])} بيانات مقبولة)")
+    else:
+        st.info(f"الضغط الحالي: {traffic_load} طلبات")
+
+    if data["log"]:
+        df = pd.DataFrame(data["log"]).sort_index(ascending=False)
+        st.table(df) # استخدام Table بدل DataFrame ليظهر بشكل أوضح في العرض
+
+with col2:
+    st.subheader("📈 مراقبة الاستقرار")
+    if data["log"]:
+        chart_df = pd.DataFrame(data["log"])
+        st.line_chart(chart_df.set_index('الوقت')['القيمة'])
+
+if st.button("تحديث يدوي 🔄"):
     st.rerun()
     
