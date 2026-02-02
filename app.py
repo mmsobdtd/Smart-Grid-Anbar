@@ -2,66 +2,78 @@ import streamlit as st
 import pandas as pd
 import time
 
-# إعداد الصفحة
-st.set_page_config(page_title="Smart Grid Real-time Monitor", layout="wide")
+st.set_page_config(page_title="Smart Grid Stress Test", layout="wide")
 
-# 1. الذاكرة المشتركة للسيرفر (تبقى البيانات مخزنة طوال فترة تشغيل السيرفر)
 @st.cache_resource
 def get_shared_data():
-    return {"log": [], "count": 0}
+    # سجل البيانات، عداد الضغط اللحظي، ووقت آخر إرسال
+    return {"log": [], "traffic_counter": 0, "last_update": time.time()}
 
 data = get_shared_data()
 
-st.title("⚡ نظام مراقبة الشبكة الذكية (التحديث اللحظي: 1 ثانية) 🚀")
+st.title("⚡ محاكاة انهيار الشبكة vs البروتوكول الذكي")
 
-# --- لوحة التحكم الجانبية (ثابتة) ---
-st.sidebar.header("🕹️ التحكم والإدخال")
-protocol_active = st.sidebar.toggle("تفعيل بروتوكول الأولوية", value=True)
+# --- لوحة التحكم الجانبية ---
+st.sidebar.header("🕹️ لوحة المهندس")
+protocol_on = st.sidebar.toggle("تفعيل البروتوكول (Priority Mode)", value=False)
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("📥 إدخال بيانات الطالب")
 user_id = st.sidebar.selectbox("المحطة:", ["طالب 1", "طالب 2", "طالب 3", "طالب 4"])
 val = st.sidebar.number_input("الجهد (V):", 0, 400, 220)
 
 if st.sidebar.button("إرسال البيانات"):
-    data["count"] += 1
-    is_critical = val > 250
+    # حساب الضغط اللحظي (Traffic Intensity)
+    current_time = time.time()
+    data["traffic_counter"] += 1
     
-    if protocol_active and not is_critical:
-        st.sidebar.warning("⚠️ البروتوكول حجب البيانات العادية")
+    # محاكاة الانهيار: إذا كان البروتوكول مطفأ والضغط عالي
+    if not protocol_on and data["traffic_counter"] > 5:
+        with st.sidebar:
+            with st.spinner('⚠️ جاري معالجة الزحام... الشبكة بطيئة'):
+                time.sleep(2) # تأخير متعمد لإظهار "الانهيار"
+        st.sidebar.error("🚨 فشل في الاستجابة اللحظية (Network Lag)")
+    
+    # منطق البروتوكول
+    is_critical = val > 250
+    if protocol_on and not is_critical:
+        st.sidebar.warning("🚫 البروتوكول رفض البيانات غير الضرورية")
     else:
         timestamp = time.strftime("%H:%M:%S")
-        priority = "🚨 عالية" if is_critical else "✅ عادية"
-        data["log"].append({"الوقت": timestamp, "المحطة": user_id, "القيمة": val, "الأولوية": priority})
-        st.sidebar.success("تم التمرير!")
+        data["log"].append({"الوقت": timestamp, "المحطة": user_id, "القيمة": val, "الأولوية": "🚨" if is_critical else "✅"})
+        st.sidebar.success("تم التمرير")
 
 if st.sidebar.button("تصفير السجل"):
     data["log"].clear()
     data["count"] = 0
     st.rerun()
 
-# --- 2. سحر التحديث اللحظي (Fragment) ---
-# قمنا بضبط التحديث ليكون كل ثانية واحدة فقط (run_every=1)
+# --- التحديث التلقائي (كل 1 ثانية) ---
 @st.fragment(run_every=1)
-def display_dashboard():
-    # عرض الوقت الحالي للتأكد من سرعة التحديث
-    st.markdown(f"**توقيت السيرفر اللحظي:** {time.strftime('%H:%M:%S')}")
+def show_dashboard():
+    # تصفير عداد الضغط تدريجياً لمحاكاة هدوء الشبكة
+    if data["traffic_counter"] > 0:
+        data["traffic_counter"] -= 0.5 
+
+    col1, col2 = st.columns([1, 1])
     
-    if data["log"]:
-        col1, col2 = st.columns([1, 1])
-        
-        with col1:
-            st.subheader("📡 سجل البيانات المركزي")
-            df = pd.DataFrame(data["log"]).sort_index(ascending=False)
-            # عرض آخر 10 قراءات فقط لضمان سرعة التحميل
-            st.table(df.head(10))
-            
-        with col2:
-            st.subheader("📈 الرسم البياني اللحظي")
+    with col1:
+        st.subheader("📡 حالة استقرار السيرفر")
+        # إظهار شريط يوضح "ضغط البيانات"
+        load_level = min(data["traffic_counter"] / 10, 1.0)
+        if not protocol_on:
+            st.progress(load_level, text=f"ضغط الشبكة بدون بروتوكول: {int(load_level*100)}%")
+            if load_level > 0.6:
+                st.error("🔥 تحذير: الشبكة تقترب من الانهيار بسبب كثرة البيانات العادية!")
+        else:
+            st.success("💎 البروتوكول يعمل: يتم تصفية البيانات (الضغط 0%)")
+
+        df = pd.DataFrame(data["log"]).sort_index(ascending=False)
+        st.table(df.head(10))
+
+    with col2:
+        st.subheader("📈 تذبذب الجهد اللحظي")
+        if data["log"]:
             chart_df = pd.DataFrame(data["log"])
             st.line_chart(chart_df.set_index('الوقت')['القيمة'])
-    else:
-        st.info("بانتظار البيانات... الشاشة تتحدث تلقائياً كل ثانية.")
 
-# استدعاء دالة العرض
-display_dashboard()
+show_dashboard()
