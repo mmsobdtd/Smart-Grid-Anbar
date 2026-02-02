@@ -2,73 +2,66 @@ import streamlit as st
 import pandas as pd
 import time
 
-st.set_page_config(page_title="Smart Grid Stress Test", layout="wide")
+# إعداد الصفحة
+st.set_page_config(page_title="Smart Grid Real-time Monitor", layout="wide")
 
-# الذاكرة المشتركة
+# 1. الذاكرة المشتركة للسيرفر (تبقى البيانات مخزنة طوال فترة تشغيل السيرفر)
 @st.cache_resource
 def get_shared_data():
     return {"log": [], "count": 0}
 
 data = get_shared_data()
 
-st.title("⚡ نظام إدارة الأحمال والبروتوكولات الذكية")
+st.title("⚡ نظام مراقبة الشبكة الذكية (التحديث اللحظي: 1 ثانية) 🚀")
 
-# --- لوحة التحكم الخاصة بك (المدير) ---
-st.sidebar.header("🕹️ لوحة تحكم المهندس")
-protocol_active = st.sidebar.toggle("تفعيل بروتوكول الأولوية (Priority Protocol)", value=False)
-clear_btn = st.sidebar.button("تصفير النظام")
+# --- لوحة التحكم الجانبية (ثابتة) ---
+st.sidebar.header("🕹️ التحكم والإدخال")
+protocol_active = st.sidebar.toggle("تفعيل بروتوكول الأولوية", value=True)
 
-if clear_btn:
-    data["log"].clear()
-    data["count"] = 0
-    st.rerun()
-
-# --- واجهة إدخال الطلاب ---
 st.sidebar.markdown("---")
-st.sidebar.subheader("📥 بوابة إدخال الطالب")
+st.sidebar.subheader("📥 إدخال بيانات الطالب")
 user_id = st.sidebar.selectbox("المحطة:", ["طالب 1", "طالب 2", "طالب 3", "طالب 4"])
 val = st.sidebar.number_input("الجهد (V):", 0, 400, 220)
 
-if st.sidebar.button("إرسال الآن"):
-    data["count"] += 1  # زيادة عداد المحاولات (الضغط)
-    
-    # منطق البروتوكول
+if st.sidebar.button("إرسال البيانات"):
+    data["count"] += 1
     is_critical = val > 250
     
     if protocol_active and not is_critical:
-        st.sidebar.warning("⚠️ البروتوكول رفض البيانات العادية لتقليل ضغط الشبكة")
+        st.sidebar.warning("⚠️ البروتوكول حجب البيانات العادية")
     else:
         timestamp = time.strftime("%H:%M:%S")
         priority = "🚨 عالية" if is_critical else "✅ عادية"
         data["log"].append({"الوقت": timestamp, "المحطة": user_id, "القيمة": val, "الأولوية": priority})
-        st.sidebar.success("تم تمرير البيانات بنجاح")
-        st.rerun()
+        st.sidebar.success("تم التمرير!")
 
-# --- شاشة العرض الأساسية (المقارنة) ---
-col1, col2 = st.columns([1, 1])
-
-with col1:
-    st.subheader("📡 حالة الشبكة (Network Status)")
-    traffic_load = data["count"]
-    
-    # إظهار مؤشر الضغط
-    if traffic_load > 10 and not protocol_active:
-        st.error(f"⚠️ حالة انهيار: ضغط بيانات عالٍ ({traffic_load} طلبات) بدون بروتوكول!")
-    elif protocol_active:
-        st.success(f"💎 الشبكة مستقرة: البروتوكول ينظم المرور ({len(data['log'])} بيانات مقبولة)")
-    else:
-        st.info(f"الضغط الحالي: {traffic_load} طلبات")
-
-    if data["log"]:
-        df = pd.DataFrame(data["log"]).sort_index(ascending=False)
-        st.table(df) # استخدام Table بدل DataFrame ليظهر بشكل أوضح في العرض
-
-with col2:
-    st.subheader("📈 مراقبة الاستقرار")
-    if data["log"]:
-        chart_df = pd.DataFrame(data["log"])
-        st.line_chart(chart_df.set_index('الوقت')['القيمة'])
-
-if st.button("تحديث يدوي 🔄"):
+if st.sidebar.button("تصفير السجل"):
+    data["log"].clear()
+    data["count"] = 0
     st.rerun()
+
+# --- 2. سحر التحديث اللحظي (Fragment) ---
+# قمنا بضبط التحديث ليكون كل ثانية واحدة فقط (run_every=1)
+@st.fragment(run_every=1)
+def display_dashboard():
+    # عرض الوقت الحالي للتأكد من سرعة التحديث
+    st.markdown(f"**توقيت السيرفر اللحظي:** {time.strftime('%H:%M:%S')}")
     
+    if data["log"]:
+        col1, col2 = st.columns([1, 1])
+        
+        with col1:
+            st.subheader("📡 سجل البيانات المركزي")
+            df = pd.DataFrame(data["log"]).sort_index(ascending=False)
+            # عرض آخر 10 قراءات فقط لضمان سرعة التحميل
+            st.table(df.head(10))
+            
+        with col2:
+            st.subheader("📈 الرسم البياني اللحظي")
+            chart_df = pd.DataFrame(data["log"])
+            st.line_chart(chart_df.set_index('الوقت')['القيمة'])
+    else:
+        st.info("بانتظار البيانات... الشاشة تتحدث تلقائياً كل ثانية.")
+
+# استدعاء دالة العرض
+display_dashboard()
