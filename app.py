@@ -3,78 +3,125 @@ import pandas as pd
 import time
 import random
 
-st.set_page_config(page_title="Smart Grid - Stochastic Simulation", layout="wide")
+st.set_page_config(page_title="Smart Grid Priority Simulation", layout="wide")
 
-# 1. الذاكرة المشتركة للنظام
-if 'system' not in st.session_state:
-    st.session_state.system = {
-        "log": [], 
-        "stations": {"طالب 1": "ON", "طالب 2": "ON", "طالب 3": "ON", "طالب 4": "ON"}
-    }
+# ======================
+# Shared Memory
+# ======================
+if "data" not in st.session_state:
+    st.session_state.data = []
 
-st.title("⚡ محاكاة تذبذب الشبكة الذكية (Unstable Data Simulation)")
+if "network_state" not in st.session_state:
+    st.session_state.network_state = "STABLE"
 
-# --- لوحة التحكم الجانبية ---
-st.sidebar.header("🕹️ إعدادات المحاكاة")
-mode = st.sidebar.radio("اختر وضع البيانات:", ["إدخال يدوي", "تذبذب طبيعي (Stable)", "تذبذب غير مستقر (Unstable/Noisy)"])
-refresh_speed = st.sidebar.slider("سرعة التحديث (ثانية):", 0.5, 5.0, 1.0)
+# ======================
+# Title
+# ======================
+st.title("⚡ Smart Grid Load Reporting Simulation")
+st.markdown("### Simulation of Network Congestion With and Without Priority Protocol")
 
-if st.sidebar.button("تصفير المنظومة ♻️"):
-    st.session_state.system["log"] = []
-    for s in st.session_state.system["stations"]: st.session_state.system["stations"][s] = "ON"
-    st.rerun()
+# ======================
+# User Input (Student Side)
+# ======================
+st.sidebar.header("📡 Student Station")
 
-# --- محرك توليد البيانات (Simulator Engine) ---
-def generate_voltage(mode):
-    if mode == "تذبذب طبيعي (Stable)":
-        return random.uniform(215, 225) # تذبذب بسيط حول الـ 220V
-    elif mode == "تذبذب غير مستقر (Unstable/Noisy)":
-        # محاكاة قفزات جهد (Spikes) غير متوقعة
-        chance = random.random()
-        if chance > 0.8: return random.uniform(300, 380) # قفزة مفاجئة (Spike)
-        if chance < 0.2: return random.uniform(150, 200) # هبوط مفاجئ (Sag)
-        return random.uniform(200, 260)
-    return None
+student = st.sidebar.selectbox(
+    "Select Station",
+    ["Station 1", "Station 2", "Station 3", "Station 4"]
+)
 
-# --- معالجة البيانات وتحديث الواجهة ---
-@st.fragment(run_every=refresh_speed)
-def run_simulation():
-    if mode != "إدخال يدوي":
-        active_ones = [s for s, status in st.session_state.system["stations"].items() if status == "ON"]
-        if active_ones:
-            target = random.choice(active_ones)
-            v_val = round(generate_voltage(mode), 2)
-            t_stamp = time.strftime("%H:%M:%S")
-            
-            # منطق الحماية (Safety Logic)
-            status_text = "✅ مستقر"
-            if v_val > 350:
-                st.session_state.system["stations"][target] = "OFF"
-                status_text = "💥 إطفاء (Overload)"
-            elif v_val < 180:
-                status_text = "⚠️ هبوط جهد"
-            
-            st.session_state.system["log"].append({
-                "الوقت": t_stamp, "المحطة": target, "القيمة": v_val, "الحالة": status_text
-            })
+load_type = st.sidebar.selectbox(
+    "Load Type",
+    [
+        "Hospital (High)",
+        "Water Station (Medium)",
+        "Residential (Low)",
+        "Lighting (Low)"
+    ]
+)
 
-    # عرض حالة المحطات
-    cols = st.columns(4)
-    for i, (name, status) in enumerate(st.session_state.system["stations"].items()):
-        color = "green" if status == "ON" else "red"
-        cols[i].markdown(f"**{name}**")
-        cols[i].markdown(f"<h3 style='color:{color};'>{status}</h3>", unsafe_allow_html=True)
+load_value = st.sidebar.slider("Load Value (kW)", 10, 300)
 
-    st.markdown("---")
-    
-    if st.session_state.system["log"]:
-        c1, c2 = st.columns([1, 1])
-        with c1:
-            st.subheader("📡 تدفق البيانات اللحظي")
-            df = pd.DataFrame(st.session_state.system["log"]).sort_index(ascending=False)
-            st.table(df.head(10))
-        with c2:
-            st.subheader("📈 مخطط الاستقرار الكهربائي")
-            st.line_chart(pd.DataFrame(st.session_state.system["log"]).set_index('الوقت')['القيمة'])
+send = st.sidebar.button("📤 Send Data")
 
-run_simulation()
+# ======================
+# Priority Map
+# ======================
+priority_map = {
+    "Hospital (High)": 1,
+    "Water Station (Medium)": 2,
+    "Residential (Low)": 3,
+    "Lighting (Low)": 3
+}
+
+# ======================
+# Send Data
+# ======================
+if send:
+    st.session_state.data.append({
+        "Station": student,
+        "Load Type": load_type,
+        "Priority": priority_map[load_type],
+        "Load (kW)": load_value,
+        "Time": time.strftime("%H:%M:%S")
+    })
+    st.success("Data Sent Successfully")
+
+# ======================
+# Control Panel (Professor / Control Center)
+# ======================
+st.subheader("🎛️ Control Center")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    if st.button("❌ Run WITHOUT Protocol (Congestion)"):
+        st.session_state.network_state = "CONGESTED"
+
+with col2:
+    if st.button("✅ Run WITH Priority Protocol"):
+        st.session_state.network_state = "PRIORITY"
+
+# ======================
+# Display Logic
+# ======================
+st.subheader("📊 Network Status")
+
+if st.session_state.network_state == "CONGESTED":
+    st.error("❌ Network Congestion Detected!")
+    st.warning("All stations are sending data simultaneously.")
+    time.sleep(1)
+    st.error("Data Collision – Network Collapse")
+
+elif st.session_state.network_state == "PRIORITY":
+    st.success("✅ Priority Protocol Active")
+    st.info("Critical loads are processed first.")
+
+# ======================
+# Data Table
+# ======================
+if st.session_state.data:
+    df = pd.DataFrame(st.session_state.data)
+
+    if st.session_state.network_state == "PRIORITY":
+        df = df.sort_values("Priority")
+
+    st.subheader("📑 Received Data")
+    st.dataframe(df, use_container_width=True)
+
+    # ======================
+    # Graph
+    # ======================
+    st.subheader("📈 Load Visualization")
+    st.bar_chart(df.set_index("Station")["Load (kW)"])
+
+else:
+    st.info("No data received yet.")
+
+# ======================
+# Reset
+# ======================
+if st.button("🔄 Reset System"):
+    st.session_state.data = []
+    st.session_state.network_state = "STABLE"
+    st.experimental_rerun()
