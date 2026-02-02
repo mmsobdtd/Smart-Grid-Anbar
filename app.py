@@ -1,78 +1,89 @@
 import streamlit as st
 import pandas as pd
 import time
-import random
 
-# إعداد الصفحة لتكون عريضة واحترافية
-st.set_page_config(page_title="Ultra-Smooth Smart Grid Monitor", layout="wide")
+# 1. إعداد الصفحة لتكون احترافية وعريضة
+st.set_page_config(page_title="Smart Grid Shared Dashboard", layout="wide")
 
-# 1. تهيئة الذاكرة المشتركة
-if 'shared_log' not in st.session_state:
-    st.session_state.shared_log = []
-if 'traffic_load' not in st.session_state:
-    st.session_state.traffic_load = 0
+# 2. إنشاء الذاكرة المشتركة (Shared Database)
+# هذه الدالة تضمن أن البيانات مخزنة في السيرفر ويراها الطلاب الأربعة في نفس الوقت
+@st.cache_resource
+def get_global_data():
+    return {"log": [], "traffic_count": 0}
 
-st.title("🔌 نظام مراقبة الشبكة الذكية (التحديث السلس)")
+global_data = get_global_data()
 
-# --- الجانب: لوحة التحكم والإدخال ---
-st.sidebar.header("🕹️ التحكم")
-protocol_active = st.sidebar.toggle("تفعيل البروتوكول الذكي", value=False)
+# --- التصميم العلوي ---
+st.title("🔌 النظام المركزي لمراقبة الشبكة الذكية")
+st.markdown("---")
 
+# --- الجانب (بوابة الطلاب والتحكم) ---
+st.sidebar.header("📥 بوابة إدخال البيانات")
+user_id = st.sidebar.selectbox("اختر المحطة (الطالب):", ["طالب 1", "طالب 2", "طالب 3", "طالب 4"])
+val = st.sidebar.number_input("أدخل قيمة الجهد (V):", 0, 400, 220)
+
+# مفتاح البروتوكول (عندك أنت فقط كمسؤول)
 st.sidebar.markdown("---")
-user_id = st.sidebar.selectbox("المحطة:", ["طالب 1", "طالب 2", "طالب 3", "طالب 4"])
-val = st.sidebar.number_input("الجهد (V):", 0, 400, 220)
+protocol_on = st.sidebar.toggle("تفعيل بروتوكول الأولوية", value=True)
 
 if st.sidebar.button("إرسال البيانات"):
-    st.session_state.traffic_load += 1
+    global_data["traffic_count"] += 1
     is_critical = val > 250
     
-    # محاكاة الانهيار (ثقل في الاستجابة)
-    if not protocol_active and st.session_state.traffic_load > 4:
+    # منطق الانهيار (تأخير متعمد إذا طفأ البروتوكول وزاد الضغط)
+    if not protocol_on and global_data["traffic_count"] > 5:
         with st.sidebar:
-            with st.spinner('⚠️ الشبكة مزدحمة...'):
-                time.sleep(1.5) # Lag متعمد
-        st.sidebar.error("🚨 تأخير في الاستجابة (Network Congestion)")
-
-    if protocol_active and not is_critical:
-        st.sidebar.warning("🚫 تم حجب البيانات العادية")
+            with st.spinner('⏳ زحام بيانات... الشبكة ثقيلة'):
+                time.sleep(1.5)
+    
+    # تنفيذ البروتوكول
+    if protocol_on and not is_critical:
+        st.sidebar.warning("🚫 البروتوكول حجب القيمة (غير ضرورية)")
     else:
-        new_data = {"الوقت": time.strftime("%H:%M:%S"), "المحطة": user_id, "القيمة": val, "الأولوية": "🚨" if is_critical else "✅"}
-        st.session_state.shared_log.append(new_data)
-        st.sidebar.success("تم التمرير بنجاح")
+        timestamp = time.strftime("%H:%M:%S")
+        global_data["log"].append({
+            "الوقت": timestamp, 
+            "المحطة": user_id, 
+            "القيمة": val, 
+            "الأولوية": "🚨 عالية" if is_critical else "✅ عادية"
+        })
+        st.sidebar.success(f"تم الإرسال من {user_id}")
 
-# --- المنطقة الرئيسية: التحديث السلس جداً ---
-# استخدام Containers فارغة لتحديث محتواها بدون إعادة تحميل الصفحة
-placeholder_metrics = st.empty()
-placeholder_chart = st.empty()
-placeholder_table = st.empty()
+if st.sidebar.button("تصفير النظام 🗑️"):
+    global_data["log"].clear()
+    global_data["traffic_count"] = 0
+    st.rerun()
 
-# حلقة التحديث السلس (تعمل باستمرار لتحديث الواجهة)
-while True:
-    # تقليل ضغط الشبكة الوهمي تدريجياً
-    if st.session_state.traffic_load > 0:
-        st.session_state.traffic_load -= 0.1
+# --- الشاشة الرئيسية (التحديث السلس) ---
+# هذه الدالة تحدث الشاشة كل ثانية واحدة دون إعادة تحميل الصفحة بالكامل (No Flicker)
+@st.fragment(run_every=1)
+def update_dashboard():
+    # تقليل مؤشر الضغط تدريجياً
+    if global_data["traffic_count"] > 0:
+        global_data["traffic_count"] -= 0.1
 
-    with placeholder_metrics.container():
-        col1, col2 = st.columns(2)
-        # إظهار مؤشر الضغط بشكل احترافي
-        load = min(st.session_state.traffic_load / 10, 1.0)
-        status_color = "inverse" if load > 0.6 and not protocol_active else "normal"
-        col1.metric("ضغط البيانات الحالي", f"{int(load*100)}%", delta="- سلس" if protocol_active else "+ زحام")
-        col2.metric("حالة البروتوكول", "نشط ✅" if protocol_active else "متوقف ❌")
+    # عرض المؤشرات العلوية (Metrics)
+    m1, m2, m3 = st.columns(3)
+    m1.metric("عدد القراءات المستلمة", len(global_data["log"]))
+    m2.metric("حالة البروتوكول", "نشط ✅" if protocol_on else "معطل ❌")
+    
+    load = min(global_data["traffic_count"] / 10, 1.0)
+    m3.progress(load, text="مؤشر ضغط الشبكة")
 
-    with placeholder_chart.container():
-        if st.session_state.shared_log:
-            df = pd.DataFrame(st.session_state.shared_log)
-            # الرسم البياني السلس
-            st.line_chart(df.set_index('الوقت')['القيمة'], height=250)
-        else:
-            st.info("بانتظار البيانات... الشاشة تتحدث بتردد عالٍ الآن.")
+    if global_data["log"]:
+        col1, col2 = st.columns([1, 1])
+        
+        with col1:
+            st.subheader("📊 سجل البيانات المشترك")
+            df = pd.DataFrame(global_data["log"]).sort_index(ascending=False)
+            st.table(df.head(8)) # عرض آخر 8 قراءات
+            
+        with col2:
+            st.subheader("📈 الرسم البياني اللحظي الموحد")
+            chart_df = pd.DataFrame(global_data["log"])
+            st.line_chart(chart_df.set_index('الوقت')['القيمة'])
+    else:
+        st.info("بانتظار دخول الطلاب... الشاشة ستتحدث تلقائياً فور الإرسال.")
 
-    with placeholder_table.container():
-        if st.session_state.shared_log:
-            st.subheader("📊 سجل البيانات الأخير")
-            df_table = pd.DataFrame(st.session_state.shared_log).sort_index(ascending=False)
-            st.table(df_table.head(5))
-
-    # التوقف لجزء بسيط جداً من الثانية لجعل الحركة "سلسة"
-    time.sleep(0.5) 
+# تشغيل تحديث الشاشة
+update_dashboard()
