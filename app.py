@@ -3,125 +3,108 @@ import pandas as pd
 import time
 import random
 
-st.set_page_config(page_title="Smart Grid Priority Simulation", layout="wide")
+st.set_page_config(page_title="Smart Grid Automatic Simulation", layout="wide")
 
 # ======================
-# Shared Memory
+# Session State
 # ======================
 if "data" not in st.session_state:
     st.session_state.data = []
 
-if "network_state" not in st.session_state:
-    st.session_state.network_state = "STABLE"
+if "protocol" not in st.session_state:
+    st.session_state.protocol = True
+
+if "running" not in st.session_state:
+    st.session_state.running = False
+
+# ======================
+# Stations & Priorities
+# ======================
+stations = {
+    "طالب 1 (Hospital)": 1,
+    "طالب 2 (Water)": 2,
+    "طالب 3 (Residential)": 3,
+    "طالب 4 (Lighting)": 3
+}
 
 # ======================
 # Title
 # ======================
-st.title("⚡ Smart Grid Load Reporting Simulation")
-st.markdown("### Simulation of Network Congestion With and Without Priority Protocol")
+st.title("⚡ Smart Grid Automatic Load Simulation")
+st.markdown("### 4 Stations – Automatic Data Generation")
 
 # ======================
-# User Input (Student Side)
+# Control Panel
 # ======================
-st.sidebar.header("📡 Student Station")
+st.sidebar.header("🎛️ Control Panel")
 
-student = st.sidebar.selectbox(
-    "Select Station",
-    ["Station 1", "Station 2", "Station 3", "Station 4"]
-)
+st.session_state.protocol = st.sidebar.toggle("تفعيل بروتوكول الأولوية", value=True)
 
-load_type = st.sidebar.selectbox(
-    "Load Type",
-    [
-        "Hospital (High)",
-        "Water Station (Medium)",
-        "Residential (Low)",
-        "Lighting (Low)"
-    ]
-)
+start = st.sidebar.button("▶ تشغيل المحاكاة")
+stop = st.sidebar.button("⏹ إيقاف المحاكاة")
+reset = st.sidebar.button("🔄 تصفير النظام")
 
-load_value = st.sidebar.slider("Load Value (kW)", 10, 300)
+if start:
+    st.session_state.running = True
 
-send = st.sidebar.button("📤 Send Data")
+if stop:
+    st.session_state.running = False
+
+if reset:
+    st.session_state.running = False
+    st.session_state.data = []
+    st.experimental_rerun()
 
 # ======================
-# Priority Map
+# Network Status
 # ======================
-priority_map = {
-    "Hospital (High)": 1,
-    "Water Station (Medium)": 2,
-    "Residential (Low)": 3,
-    "Lighting (Low)": 3
-}
+st.subheader("📡 حالة الشبكة")
+
+if st.session_state.protocol:
+    st.success("✅ بروتوكول الأولوية نشط")
+else:
+    st.error("❌ بدون بروتوكول – الشبكة معرضة للانهيار")
 
 # ======================
-# Send Data
+# Automatic Data Generator
 # ======================
-if send:
-    st.session_state.data.append({
-        "Station": student,
-        "Load Type": load_type,
-        "Priority": priority_map[load_type],
-        "Load (kW)": load_value,
-        "Time": time.strftime("%H:%M:%S")
-    })
-    st.success("Data Sent Successfully")
+if st.session_state.running:
+    for station, priority in stations.items():
+        voltage = random.randint(180, 420)
 
-# ======================
-# Control Panel (Professor / Control Center)
-# ======================
-st.subheader("🎛️ Control Center")
+        st.session_state.data.append({
+            "الوقت": time.strftime("%H:%M:%S"),
+            "المحطة": station,
+            "القيمة (V)": voltage,
+            "الأولوية": priority
+        })
 
-col1, col2 = st.columns(2)
-
-with col1:
-    if st.button("❌ Run WITHOUT Protocol (Congestion)"):
-        st.session_state.network_state = "CONGESTED"
-
-with col2:
-    if st.button("✅ Run WITH Priority Protocol"):
-        st.session_state.network_state = "PRIORITY"
-
-# ======================
-# Display Logic
-# ======================
-st.subheader("📊 Network Status")
-
-if st.session_state.network_state == "CONGESTED":
-    st.error("❌ Network Congestion Detected!")
-    st.warning("All stations are sending data simultaneously.")
     time.sleep(1)
-    st.error("Data Collision – Network Collapse")
-
-elif st.session_state.network_state == "PRIORITY":
-    st.success("✅ Priority Protocol Active")
-    st.info("Critical loads are processed first.")
+    st.experimental_rerun()
 
 # ======================
-# Data Table
+# Display Data
 # ======================
 if st.session_state.data:
     df = pd.DataFrame(st.session_state.data)
 
-    if st.session_state.network_state == "PRIORITY":
-        df = df.sort_values("Priority")
+    if st.session_state.protocol:
+        df = df.sort_values("الأولوية")
 
-    st.subheader("📑 Received Data")
-    st.dataframe(df, use_container_width=True)
+    # Network Congestion Simulation
+    st.subheader("📊 سجل البيانات")
+
+    if not st.session_state.protocol and len(df) > 8:
+        st.error("🚨 Network Congestion Detected!")
+        st.warning("تضارب بيانات بسبب الإرسال المتزامن")
+    else:
+        st.dataframe(df.tail(12), use_container_width=True)
 
     # ======================
     # Graph
     # ======================
-    st.subheader("📈 Load Visualization")
-    st.bar_chart(df.set_index("Station")["Load (kW)"])
+    st.subheader("📈 الرسم البياني اللحظي للجهد")
+    st.line_chart(df.set_index("الوقت")["القيمة (V)"])
 
 else:
-    st.info("No data received yet.")
-
-# ======================
-# Reset
-# ======================
-if st.button("🔄 Reset System"):
-    st.session_state.data = []
-    st.session_state.network_state = "STABLE"
-    st.experimental_rerun()
+    st.info("لا توجد بيانات بعد")
