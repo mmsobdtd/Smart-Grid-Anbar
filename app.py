@@ -3,21 +3,19 @@ import pandas as pd
 import json
 import os
 import time
-import random
 from datetime import datetime
 
-# إعدادات الصفحة
-st.set_page_config(page_title="نظام حماية المنشآت الحرجة - الأنبار", layout="wide")
+# إعدادات الصفحة الرسمية
+st.set_page_config(page_title="نظام إدارة أحمال الأنبار - إدخال يدوياً", layout="wide")
 
-DB_FILE = "anbar_critical_grid.json"
+DB_FILE = "anbar_manual_grid.json"
 
-# --- تعريف المنشآت والمتوسطات (Average Load) ---
-# قمت بتحديد متوسط تيار (A) لكل مكان بناءً على طبيعته
+# --- تعريف المنشآت والمتوسطات المرجعية ---
 LOCATIONS_CONFIG = {
-    "مستشفى الرمادي التعليمي": {"avg": 400, "priority": 10, "cat": "حمل حيوي (صحي)"},
-    "معمل زجاج الرمادي": {"avg": 500, "priority": 10, "cat": "حمل صناعي (غير قابل للقطع)"},
-    "جامعة الأنبار (المجمع)": {"avg": 350, "priority": 8, "cat": "حمل تعليمي"},
-    "حي التأميم (المغذي الرئيسي)": {"avg": 300, "priority": 7, "cat": "حمل سكني"}
+    "مستشفى الرمادي التعليمي": {"avg": 400, "priority": 10},
+    "معمل زجاج الرمادي": {"avg": 500, "priority": 10},
+    "جامعة الأنبار (المجمع)": {"avg": 350, "priority": 8},
+    "حي التأميم (المغذي الرئيسي)": {"avg": 300, "priority": 7}
 }
 
 def load_data():
@@ -32,99 +30,94 @@ def save_entry(name, current):
     history = load_data()
     avg = LOCATIONS_CONFIG[name]["avg"]
     
-    # منطق التنبيه بناءً على المتوسط
+    # منطق تصنيف الحالة بناءً على المتوسط
     if current < avg:
-        status = "🟢 حالة عادية (Stable)"
-        level = 1
+        status, level = "🟢 مستقر (Normal)", 1
     elif avg <= current < (avg * 1.2):
-        status = "🟡 تنبيه: تجاوز المتوسط (Warning)"
-        level = 2
+        status, level = "🟡 تنبيه (Warning)", 2
     else:
-        status = "🔴 خطر: حمل زائد حرج (Danger)"
-        level = 3
+        status, level = "🔴 خطر (Critical)", 3
 
     entry = {
         "المنشأة": name,
-        "التصنيف": LOCATIONS_CONFIG[name]["cat"],
         "التيار (A)": current,
-        "المتوسط المرجعي": avg,
+        "المتوسط": avg,
         "الحالة": status,
-        "الوقت": datetime.now().strftime("%H:%M:%S.%f")[:-3],
+        "الوقت": datetime.now().strftime("%H:%M:%S"),
         "level": level,
         "p": LOCATIONS_CONFIG[name]["priority"]
     }
     history.append(entry)
     with open(DB_FILE, "w") as f:
-        json.dump(history[-80:], f)
+        json.dump(history[-100:], f)
 
 # --- القائمة الجانبية ---
-st.sidebar.title("🛂 مركز السيطرة القومي")
-mode = st.sidebar.toggle("تفعيل بروتوكول الأولوية الذكي", value=True)
-role = st.sidebar.selectbox("الدور:", ["شاشة المراقبة (Dashboard)", "محاكي التدفق (Simulator)"])
+st.sidebar.title("🛂 وحدة التحكم")
+mode = st.sidebar.toggle("تفعيل بروتوكول الأولوية", value=True)
+role = st.sidebar.radio("اختر المهمة:", ["إدخال بيانات (الطالب)", "شاشة المراقبة (المراقب)"])
 
-if st.sidebar.button("إعادة تهيئة السجل"):
+if st.sidebar.button("مسح السجلات"):
     if os.path.exists(DB_FILE): os.remove(DB_FILE)
     st.rerun()
 
-# --- 1. واجهة المحاكي (إرسال كل 0.5 ثانية) ---
-if role == "محاكي التدفق (Simulator)":
-    st.title("🚀 محاكي الأحمال اللحظي - الرمادي")
-    st.warning("يتم الآن محاكاة 4 مواقع حيوية بإرسال فائق السرعة.")
+# --- 1. واجهة إدخال البيانات (يدوياً) ---
+if role == "إدخال بيانات (الطالب)":
+    st.title("📥 وحدة إدخال البيانات الميدانية")
+    st.info("قم باختيار المنشأة وإدخال قيمة التيار المقاسة حالياً.")
     
-    if st.checkbox("بدء البث الحي للأحمال"):
-        placeholder = st.empty()
-        while True:
-            name = random.choice(list(LOCATIONS_CONFIG.keys()))
-            # توليد تيار يتأرجح حول المتوسط
-            avg = LOCATIONS_CONFIG[name]["avg"]
-            current_val = random.randint(int(avg * 0.7), int(avg * 1.5))
-            
-            save_entry(name, current_val)
-            with placeholder.container():
-                st.info(f"📡 جاري الإرسال: {name} | القيمة الحالية: {current_val}A")
-            time.sleep(0.5)
+    col1, col2 = st.columns(2)
+    with col1:
+        name = st.selectbox("المنشأة المستهدفة:", list(LOCATIONS_CONFIG.keys()))
+    with col2:
+        current_val = st.number_input("قيمة التيار (Amps):", min_value=0, max_value=1000, value=LOCATIONS_CONFIG[name]["avg"])
+    
+    if st.button("إرسال البيانات إلى السيرفر"):
+        save_entry(name, current_val)
+        st.success(f"تم إرسال {current_val}A لـ {name} بنجاح!")
+        st.balloons() # تأثير بصري عند الإرسال
 
-# --- 2. واجهة المراقب ---
+# --- 2. واجهة المراقب (تحديث تلقائي) ---
 else:
-    st.title("🖥️ شاشة المراقبة والتحليل الذكي")
-    st.caption("نظام إدارة الأحمال الحرجة - الأنبار | التركيز: معمل الزجاج والمستشفى")
+    st.title("🖥️ مركز المراقبة والتحليل اللحظي")
+    st.caption("جامعة الأنبار - كلية الهندسة | مشروع إدارة الأحمال الذكية")
 
-    @st.fragment(run_every="1s")
-    def update_ui():
+    @st.fragment(run_every="2s")
+    def dashboard():
         data = load_data()
         if not data:
-            st.info("بانتظار البيانات... شغل المحاكي أولاً.")
+            st.warning("بانتظار استقبال أول حزمة بيانات... (اذهب لصفحة الإدخال أولاً)")
             return
 
         df = pd.DataFrame(data)
 
-        # ترتيب البيانات (البروتوكول)
+        # تطبيق البروتوكول (الفرز)
         if mode:
-            # ترتيب حسب الخطورة (Level) ثم الأولوية (p)
             df_display = df.sort_values(by=["level", "p"], ascending=[False, False])
         else:
             df_display = df.iloc[::-1]
 
         # --- الرسم البياني ---
-        st.subheader("📊 المخطط الزمني للأحمال")
+        st.subheader("📊 تحليل الرسم البياني للأحمال")
         chart_df = df.pivot_table(index='الوقت', columns='المنشأة', values='التيار (A)').ffill()
         st.line_chart(chart_df, height=350)
+        
+        
 
         # --- جدول البيانات ---
-        st.subheader("📋 سجل مراقبة تجاوز المتوسطات")
+        st.subheader("📋 سجل استلام الحزم (Data Logging)")
         
-        def highlight_status(row):
+        def color_rows(row):
             if "🔴" in row['الحالة']:
                 return ['background-color: #7b0000; color: white; font-weight: bold'] * len(row)
             elif "🟡" in row['الحالة']:
-                return ['background-color: #856404; color: white'] * len(row)
+                return ['background-color: #6d5c00; color: white'] * len(row)
             return [''] * len(row)
 
         st.dataframe(
-            df_display.drop(columns=['level', 'p'], errors='ignore').style.apply(highlight_status, axis=1),
+            df_display.drop(columns=['level', 'p'], errors='ignore').style.apply(color_rows, axis=1),
             use_container_width=True,
-            height=450
+            height=400
         )
 
-    update_ui()
+    dashboard()
     
