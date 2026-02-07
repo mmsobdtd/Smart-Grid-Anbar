@@ -2,18 +2,20 @@ import streamlit as st
 import pandas as pd
 import json
 import os
+import time
+import random
 
 # إعدادات الصفحة
-st.set_page_config(page_title="Anbar Smart Grid", layout="wide")
+st.set_page_config(page_title="Smart Grid Protocol Demo", layout="wide")
 
-# ملف بسيط لتخزين البيانات (قاعدة بيانات مصغرة) لكي تظهر التحديثات للكل
-DB_FILE = "grid_data.json"
+DB_FILE = "grid_state.json"
 
+# دالة لإدارة البيانات المشتركة بين الطلاب والسيرفر
 def load_data():
     if not os.path.exists(DB_FILE):
-        initial_data = {f"Station {i}": 200 for i in range(1, 5)}
-        save_data(initial_data)
-        return initial_data
+        data = {f"Station {i}": {"current": 200, "timestamp": time.time()} for i in range(1, 5)}
+        save_data(data)
+        return data
     with open(DB_FILE, "r") as f:
         return json.load(f)
 
@@ -24,63 +26,83 @@ def save_data(data):
 # تحميل البيانات الحالية
 current_loads = load_data()
 
-# القائمة الجانبية للتنقل بين الأدوار
-st.sidebar.title("🛂 اختيار الدور")
-role = st.sidebar.selectbox("من أنت؟", ["طالب (إدخال بيانات)", "مراقب (غرفة التحكم)"])
+# --- القائمة الجانبية (التحكم في العرض) ---
+st.sidebar.title("🎮 لوحة التحكم بالعرض")
+mode = st.sidebar.radio("اختر وضع النظام:", ["بدون بروتوكول (Chaos)", "مع البروتوكول (Smart)"])
+role = st.sidebar.selectbox("من أنت؟", ["طالب (المحطة)", "المراقب (غرفة التحكم)"])
 
-# --- واجهة الطالب ---
-if role == "طالب (إدخال بيانات)":
-    st.header("📲 واجهة المحطة الفرعية")
-    st.info("قم بتعديل حمل محطتك وسيتم تحديثه في غرفة التحكم فوراً.")
+# --- واجهة الطالب (تحديث لحظي) ---
+if role == "طالب (المحطة)":
+    st.header("📲 وحدة تحكم المحطة الفرعية")
+    station_id = st.selectbox("اختر رقم محطتك:", list(current_loads.keys()))
     
-    station_id = st.selectbox("اختر رقم محطتك:", [f"Station {i}" for i in range(1, 5)])
+    # تحديث البيانات فور تغيير المنزلق
+    val = st.slider("اسحب لتغيير الأمبيرية (I):", 0, 600, current_loads[station_id]["current"])
     
-    # منزلق (Slider) لتعديل الأمبيرية
-    new_val = st.slider(f"تعديل تيار {station_id} (Amps):", 0, 600, current_loads[station_id])
-    
-    if st.button("إرسال البيانات إلى السيرفر"):
-        current_loads[station_id] = new_val
+    if val != current_loads[station_id]["current"]:
+        current_loads[station_id]["current"] = val
+        current_loads[station_id]["timestamp"] = time.time()
         save_data(current_loads)
-        st.success(f"تم إرسال القيمة {new_val} أمبير بنجاح!")
+        st.success(f"تم تحديث البيانات لحظياً: {val} A")
 
-# --- واجهة التحكم ---
+# --- واجهة المراقب (غرفة التحكم) ---
 else:
     st.header("🖥️ غرفة التحكم المركزية - جامعة الأنبار")
+    st.write(f"الوضع الحالي: **{mode}**")
     
-    # تحويل البيانات إلى جدول
-    df = pd.DataFrame(list(current_loads.items()), columns=['Station', 'Current'])
-    
-    # تطبيق منطق البروتوكول (الأولوية)
-    # التيار > 300A (أولوية قصوى) | التيار < 250A (إلغاء الأولوية)
-    def check_priority(row):
-        if row['Current'] >= 300: return "🔴 HIGH PRIORITY"
-        elif row['Current'] <= 250: return "🟢 Normal"
-        else: return "🟡 Monitoring"
+    # زر للتحديث اليدوي (لأن الطلاب يرسلون بياناتهم باستمرار)
+    if st.button("تحديث لوحة البيانات 🔄"):
+        st.rerun()
 
-    df['Status'] = df.apply(check_priority, axis=1)
-    
-    # فرز البيانات (البروتوكول يضع المشاكل في الأعلى)
-    df = df.sort_values(by="Current", ascending=False)
+    # تحويل البيانات لجدول
+    raw_data = []
+    for s, info in current_loads.items():
+        raw_data.append({"Station": s, "Current": info["current"], "Time": info["timestamp"]})
+    df = pd.DataFrame(raw_data)
 
-    # عرض الإحصائيات في مربعات (Metrics)
-    col1, col2, col3, col4 = st.columns(4)
-    cols = [col1, col2, col3, col4]
-    for i, (idx, row) in enumerate(df.iterrows()):
-        color = "normal" if row['Current'] < 300 else "inverse"
-        cols[i].metric(row['Station'], f"{row['Current']} A", delta=row['Status'], delta_color=color)
-
-    st.divider()
-    
-    # الرسم البياني للأحمال
-    st.subheader("📊 الرسم البياني لتوزيع الأحمال")
-    st.bar_chart(df.set_index('Station')['Current'])
-    
-    # جدول البيانات التفصيلي
-    st.subheader("📋 جدول مراقبة البروتوكول")
-    st.table(df)
-
-    # تنبيهات ذكية
-    high_load_stations = df[df['Current'] >= 300]['Station'].tolist()
-    if high_load_stations:
-        st.error(f"⚠️ تحذير: حمل زائد في {', '.join(high_load_stations)}! البروتوكول يوجه الطاقة للمناطق الحرجة.")
+    # --- سيناريو 1: بدون بروتوكول (انهيار الشبكة) ---
+    if mode == "بدون بروتوكول (Chaos)":
+        st.error("🚨 تحذير: النظام يعمل بدون قواعد (No Protocol)")
+        st.warning("الملاحظة: البيانات تصل بشكل عشوائي، لا يوجد ترتيب للأولويات، النظام عرضة للانهيار.")
         
+        # محاكاة "فوضى": عرض البيانات بترتيب زمني عشوائي أو غير مرتب
+        st.subheader("📋 سجل الحزم الواردة (تداخل البيانات)")
+        st.write("بيانات خام متداخلة (Collisions):")
+        st.table(df.sample(frac=1)) # عرض البيانات بترتيب عشوائي تماماً لمحاكاة التداخل
+        
+        # محاكاة الانهيار بصرياً
+        if df['Current'].max() > 400:
+            st.markdown("<h1 style='color:red; text-align:center;'>SYSTEM OVERLOAD - NETWORK COLLAPSE</h1>", unsafe_allow_html=True)
+            st.image("https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNHJmNjR4bm16Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6JmVwPXYxX2ludGVybmFsX2dpZl9ieV9pZCZjdD1n/3o7TKMGpxPucK8hLJC/giphy.gif", width=400)
+
+    # --- سيناريو 2: مع البروتوكول (تنظيم وأولوية) ---
+    else:
+        st.success("✅ البروتوكول الذكي نشط (Priority Protocol Active)")
+        
+        # تطبيق منطق الأولويات: 300A (خطر) | 250A (طبيعي)
+        def classify(c):
+            if c >= 300: return "🔴 HIGH PRIORITY (Critical)"
+            elif c <= 250: return "🟢 Normal"
+            else: return "🟡 Warning"
+
+        df['Status'] = df['Current'].apply(classify)
+        
+        # الفرز حسب الأولوية (الأخطر في الأعلى)
+        df_sorted = df.sort_values(by="Current", ascending=False)
+        
+        # عرض الرسوم البيانية المنظمة
+        st.subheader("📊 مراقبة استقرار الأحمال")
+        st.bar_chart(df_sorted.set_index('Station')['Current'])
+
+        
+
+        # عرض الجدول المنظم
+        st.subheader("📋 جدول البيانات المنظم حسب الأولوية")
+        st.dataframe(df_sorted.style.highlight_max(axis=0, color='red'), use_container_width=True)
+
+        # التنبيهات
+        critical = df_sorted[df_sorted['Current'] >= 300]
+        if not critical.empty:
+            for _, row in critical.iterrows():
+                st.toast(f"🚨 تنبيه عاجل: {row['Station']} تجاوزت الحد المسموح!", icon="🔥")
+                
