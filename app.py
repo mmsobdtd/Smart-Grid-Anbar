@@ -1,73 +1,86 @@
 import streamlit as st
 import pandas as pd
-import time
+import json
+import os
 
 # إعدادات الصفحة
-st.set_page_config(page_title="Smart Grid Monitoring - Anbar University", layout="wide")
+st.set_page_config(page_title="Anbar Smart Grid", layout="wide")
 
-st.title("⚡ نظام مراقبة الشبكة الذكية (محاكاة البروتوكول)")
-st.write("قسم الهندسة الكهربائية - جامعة الأنبار")
+# ملف بسيط لتخزين البيانات (قاعدة بيانات مصغرة) لكي تظهر التحديثات للكل
+DB_FILE = "grid_data.json"
 
-# تعريف الثوابت (المعايير الهندسية)
-HIGH_THRESHOLD = 300 # $I > 300\text{ A}$ أولوية قصوى
-NORMAL_THRESHOLD = 250 # $I < 250\text{ A}$ حالة طبيعية
+def load_data():
+    if not os.path.exists(DB_FILE):
+        initial_data = {f"Station {i}": 200 for i in range(1, 5)}
+        save_data(initial_data)
+        return initial_data
+    with open(DB_FILE, "r") as f:
+        return json.load(f)
 
-# تفعيل أو تعطيل البروتوكول
-protocol_active = st.sidebar.toggle("تفعيل بروتوكول الأولوية (Protocol Mode)", value=False)
+def save_data(data):
+    with open(DB_FILE, "w") as f:
+        json.dump(data, f)
 
-st.sidebar.markdown("---")
-st.sidebar.info("بدون بروتوكول: تظهر البيانات بترتيب وصولها العشوائي فقط.\n\nمع البروتوكول: يتم فرز المحطات حسب خطورة الحمل.")
+# تحميل البيانات الحالية
+current_loads = load_data()
 
-# واجهة إدخال البيانات للطلاب الأربعة
-st.subheader("📥 إدخال بيانات المحطات (طلاب)")
-col1, col2, col3, col4 = st.columns(4)
+# القائمة الجانبية للتنقل بين الأدوار
+st.sidebar.title("🛂 اختيار الدور")
+role = st.sidebar.selectbox("من أنت؟", ["طالب (إدخال بيانات)", "مراقب (غرفة التحكم)"])
 
-with col1:
-    s1 = st.number_input("محطة 1 (Amps)", min_value=0, value=200, key="st1")
-with col2:
-    s2 = st.number_input("محطة 2 (Amps)", min_value=0, value=200, key="st2")
-with col3:
-    s3 = st.number_input("محطة 3 (Amps)", min_value=0, value=200, key="st3")
-with col4:
-    s4 = st.number_input("محطة 4 (Amps)", min_value=0, value=200, key="st4")
+# --- واجهة الطالب ---
+if role == "طالب (إدخال بيانات)":
+    st.header("📲 واجهة المحطة الفرعية")
+    st.info("قم بتعديل حمل محطتك وسيتم تحديثه في غرفة التحكم فوراً.")
+    
+    station_id = st.selectbox("اختر رقم محطتك:", [f"Station {i}" for i in range(1, 5)])
+    
+    # منزلق (Slider) لتعديل الأمبيرية
+    new_val = st.slider(f"تعديل تيار {station_id} (Amps):", 0, 600, current_loads[station_id])
+    
+    if st.button("إرسال البيانات إلى السيرفر"):
+        current_loads[station_id] = new_val
+        save_data(current_loads)
+        st.success(f"تم إرسال القيمة {new_val} أمبير بنجاح!")
 
-data = [
-    {"Station": "Station 1", "Current": s1},
-    {"Station": "Station 2", "Current": s2},
-    {"Station": "Station 3", "Current": s3},
-    {"Station": "Station 4", "Current": s4},
-]
-
-df = pd.DataFrame(data)
-
-# منطق المعالجة (البروتوكول)
-st.divider()
-
-if not protocol_active:
-    st.warning("⚠️ الوضع الحالي: بدون بروتوكول (البيانات خام وغير منظمة)")
-    st.table(df) # عرض البيانات كما هي بدون معالجة
+# --- واجهة التحكم ---
 else:
-    st.success("✅ الوضع الحالي: بروتوكول الأولوية نشط")
+    st.header("🖥️ غرفة التحكم المركزية - جامعة الأنبار")
     
-    # تصنيف البيانات وإعطاء الأولوية
-    def assign_priority(current):
-        if current >= HIGH_THRESHOLD:
-            return "🔴 HIGH PRIORITY (Overload)"
-        elif current <= NORMAL_THRESHOLD:
-            return "🟢 Normal (Low Load)"
-        else:
-            return "🟡 Stable"
+    # تحويل البيانات إلى جدول
+    df = pd.DataFrame(list(current_loads.items()), columns=['Station', 'Current'])
+    
+    # تطبيق منطق البروتوكول (الأولوية)
+    # التيار > 300A (أولوية قصوى) | التيار < 250A (إلغاء الأولوية)
+    def check_priority(row):
+        if row['Current'] >= 300: return "🔴 HIGH PRIORITY"
+        elif row['Current'] <= 250: return "🟢 Normal"
+        else: return "🟡 Monitoring"
 
-    df['Status'] = df['Current'].apply(assign_priority)
+    df['Status'] = df.apply(check_priority, axis=1)
     
-    # فرز الجدول بحيث تظهر "الأولوية القصوى" في الأعلى دائماً
+    # فرز البيانات (البروتوكول يضع المشاكل في الأعلى)
     df = df.sort_values(by="Current", ascending=False)
-    
-    # عرض النتائج بشكل احترافي
-    st.dataframe(df.style.apply(lambda x: ['background-color: #ff4b4b' if 'HIGH' in str(v) else '' for v in x], axis=1), use_container_width=True)
 
-    # إشارات البروتوكول (Alerts)
-    for index, row in df.iterrows():
-        if row['Current'] >= HIGH_THRESHOLD:
-            st.error(f"🚨 إنذار من {row['Station']}: تم اكتشاف حمل زائد ({row['Current']}A) - جاري تحويل الطاقة!")
-            
+    # عرض الإحصائيات في مربعات (Metrics)
+    col1, col2, col3, col4 = st.columns(4)
+    cols = [col1, col2, col3, col4]
+    for i, (idx, row) in enumerate(df.iterrows()):
+        color = "normal" if row['Current'] < 300 else "inverse"
+        cols[i].metric(row['Station'], f"{row['Current']} A", delta=row['Status'], delta_color=color)
+
+    st.divider()
+    
+    # الرسم البياني للأحمال
+    st.subheader("📊 الرسم البياني لتوزيع الأحمال")
+    st.bar_chart(df.set_index('Station')['Current'])
+    
+    # جدول البيانات التفصيلي
+    st.subheader("📋 جدول مراقبة البروتوكول")
+    st.table(df)
+
+    # تنبيهات ذكية
+    high_load_stations = df[df['Current'] >= 300]['Station'].tolist()
+    if high_load_stations:
+        st.error(f"⚠️ تحذير: حمل زائد في {', '.join(high_load_stations)}! البروتوكول يوجه الطاقة للمناطق الحرجة.")
+        
