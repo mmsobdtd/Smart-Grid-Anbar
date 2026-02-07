@@ -7,9 +7,18 @@ import random
 from datetime import datetime
 
 # إعدادات الصفحة
-st.set_page_config(page_title="نظام طاقة الأنبار - بث فائق السرعة", layout="wide")
+st.set_page_config(page_title="نظام حماية المنشآت الحرجة - الأنبار", layout="wide")
 
-DB_FILE = "anbar_fast_data.json"
+DB_FILE = "anbar_critical_grid.json"
+
+# --- تعريف المنشآت والمتوسطات (Average Load) ---
+# قمت بتحديد متوسط تيار (A) لكل مكان بناءً على طبيعته
+LOCATIONS_CONFIG = {
+    "مستشفى الرمادي التعليمي": {"avg": 400, "priority": 10, "cat": "حمل حيوي (صحي)"},
+    "معمل زجاج الرمادي": {"avg": 500, "priority": 10, "cat": "حمل صناعي (غير قابل للقطع)"},
+    "جامعة الأنبار (المجمع)": {"avg": 350, "priority": 8, "cat": "حمل تعليمي"},
+    "حي التأميم (المغذي الرئيسي)": {"avg": 300, "priority": 7, "cat": "حمل سكني"}
+}
 
 def load_data():
     if not os.path.exists(DB_FILE): return []
@@ -19,89 +28,103 @@ def load_data():
             return json.loads(content) if content else []
     except: return []
 
-def save_entry(location, current, category, weight):
+def save_entry(name, current):
     history = load_data()
+    avg = LOCATIONS_CONFIG[name]["avg"]
+    
+    # منطق التنبيه بناءً على المتوسط
+    if current < avg:
+        status = "🟢 حالة عادية (Stable)"
+        level = 1
+    elif avg <= current < (avg * 1.2):
+        status = "🟡 تنبيه: تجاوز المتوسط (Warning)"
+        level = 2
+    else:
+        status = "🔴 خطر: حمل زائد حرج (Danger)"
+        level = 3
+
     entry = {
-        "المنشأة": location,
-        "النوع": category,
+        "المنشأة": name,
+        "التصنيف": LOCATIONS_CONFIG[name]["cat"],
         "التيار (A)": current,
-        "التوقيت": datetime.now().strftime("%H:%M:%S.%f")[:-3], # توقيت دقيق بالملي ثانية
-        "Priority": weight
+        "المتوسط المرجعي": avg,
+        "الحالة": status,
+        "الوقت": datetime.now().strftime("%H:%M:%S.%f")[:-3],
+        "level": level,
+        "p": LOCATIONS_CONFIG[name]["priority"]
     }
     history.append(entry)
     with open(DB_FILE, "w") as f:
-        json.dump(history[-100:], f) # حفظ آخر 100 سجل
+        json.dump(history[-80:], f)
 
 # --- القائمة الجانبية ---
-st.sidebar.title("🛂 التحكم بالنظام")
-mode = st.sidebar.toggle("تفعيل بروتوكول الأولويات", value=True)
-role = st.sidebar.selectbox("اختر الواجهة:", ["المراقب (Dashboard)", "المحاكي (High Speed Simulator)"])
+st.sidebar.title("🛂 مركز السيطرة القومي")
+mode = st.sidebar.toggle("تفعيل بروتوكول الأولوية الذكي", value=True)
+role = st.sidebar.selectbox("الدور:", ["شاشة المراقبة (Dashboard)", "محاكي التدفق (Simulator)"])
 
-if st.sidebar.button("مسح السجل التاريخي"):
+if st.sidebar.button("إعادة تهيئة السجل"):
     if os.path.exists(DB_FILE): os.remove(DB_FILE)
     st.rerun()
 
-# --- 1. واجهة المحاكي (إرسال كل نصف ثانية) ---
-if role == "المحاكي (High Speed Simulator)":
-    st.title("🚀 محاكي التدفق السريع - مدينة الرمادي")
-    st.warning("تنبيه: الإرسال الآن مبرمج على (0.5 ثانية) لمحاكاة ضغط الشبكة الحقيقي.")
+# --- 1. واجهة المحاكي (إرسال كل 0.5 ثانية) ---
+if role == "محاكي التدفق (Simulator)":
+    st.title("🚀 محاكي الأحمال اللحظي - الرمادي")
+    st.warning("يتم الآن محاكاة 4 مواقع حيوية بإرسال فائق السرعة.")
     
-    locations = [
-        {"n": "مستشفى الرمادي التعليمي", "c": "P1 - حرجة", "w": 10},
-        {"n": "مصفى الأنبار النفطي", "c": "P1 - صناعي", "w": 9},
-        {"n": "محطة مياه الرمادي", "c": "P2 - خدمي", "w": 8},
-        {"n": "جامعة الأنبار", "c": "P2 - تعليمي", "w": 7},
-        {"n": "ملعب الأنبار الأولمبي", "c": "P3 - بنية تحتية", "w": 5},
-        {"n": "مول الرمادي", "c": "P3 - تجاري", "w": 4},
-        {"n": "حي التأميم السكني", "c": "P4 - سكني", "w": 2}
-    ]
-    
-    status = st.checkbox("بدء البث فائق السرعة")
-    if status:
+    if st.checkbox("بدء البث الحي للأحمال"):
         placeholder = st.empty()
         while True:
-            loc = random.choice(locations)
-            val = random.randint(280, 580)
-            save_entry(loc["n"], val, loc["c"], loc["w"])
+            name = random.choice(list(LOCATIONS_CONFIG.keys()))
+            # توليد تيار يتأرجح حول المتوسط
+            avg = LOCATIONS_CONFIG[name]["avg"]
+            current_val = random.randint(int(avg * 0.7), int(avg * 1.5))
+            
+            save_entry(name, current_val)
             with placeholder.container():
-                st.success(f"📡 جاري الإرسال: {loc['n']} -> {val}A")
-                st.write(f"التوقيت: {datetime.now().strftime('%H:%M:%S.%f')[:-3]}")
-            time.sleep(0.5) # تعديل السرعة إلى نصف ثانية
+                st.info(f"📡 جاري الإرسال: {name} | القيمة الحالية: {current_val}A")
+            time.sleep(0.5)
 
-# --- 2. واجهة المراقب (تحديث تلقائي) ---
+# --- 2. واجهة المراقب ---
 else:
-    st.title("🖥️ مركز التحكم والسيطرة اللحظي")
-    
-    @st.fragment(run_every="1s") # تحديث الشاشة كل ثانية لمواكبة البيانات
-    def show_dashboard():
+    st.title("🖥️ شاشة المراقبة والتحليل الذكي")
+    st.caption("نظام إدارة الأحمال الحرجة - الأنبار | التركيز: معمل الزجاج والمستشفى")
+
+    @st.fragment(run_every="1s")
+    def update_ui():
         data = load_data()
         if not data:
-            st.info("بانتظار وصول البيانات... (يرجى تشغيل المحاكي في الصفحة الأخرى)")
+            st.info("بانتظار البيانات... شغل المحاكي أولاً.")
             return
 
         df = pd.DataFrame(data)
 
-        # منطق البروتوكول
+        # ترتيب البيانات (البروتوكول)
         if mode:
-            df['Score'] = df['Priority'] * 100 + df['التيار (A)']
-            df_display = df.sort_values(by="Score", ascending=False)
+            # ترتيب حسب الخطورة (Level) ثم الأولوية (p)
+            df_display = df.sort_values(by=["level", "p"], ascending=[False, False])
         else:
             df_display = df.iloc[::-1]
 
-        # الرسم البياني
-        st.subheader("📈 التحليل البياني المباشر (Live Analysis)")
-        # تجهيز البيانات للرسم البياني
-        chart_data = df.pivot_table(index='التوقيت', columns='المنشأة', values='التيار (A)').ffill()
-        st.line_chart(chart_data, height=350)
+        # --- الرسم البياني ---
+        st.subheader("📊 المخطط الزمني للأحمال")
+        chart_df = df.pivot_table(index='الوقت', columns='المنشأة', values='التيار (A)').ffill()
+        st.line_chart(chart_df, height=350)
 
-        # جدول البيانات
-        st.subheader("📋 سجل البيانات الفني المستلم")
-        def style_df(row):
-            if row['Priority'] >= 9 and row['التيار (A)'] >= 400:
+        # --- جدول البيانات ---
+        st.subheader("📋 سجل مراقبة تجاوز المتوسطات")
+        
+        def highlight_status(row):
+            if "🔴" in row['الحالة']:
                 return ['background-color: #7b0000; color: white; font-weight: bold'] * len(row)
+            elif "🟡" in row['الحالة']:
+                return ['background-color: #856404; color: white'] * len(row)
             return [''] * len(row)
 
-        st.dataframe(df_display.style.apply(style_df, axis=1), use_container_width=True, height=450)
+        st.dataframe(
+            df_display.drop(columns=['level', 'p'], errors='ignore').style.apply(highlight_status, axis=1),
+            use_container_width=True,
+            height=450
+        )
 
-    show_dashboard()
-    
+    update_ui()
+            
