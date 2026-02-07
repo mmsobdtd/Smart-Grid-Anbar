@@ -7,9 +7,9 @@ import random
 from datetime import datetime
 
 # إعدادات الصفحة الرسمية
-st.set_page_config(page_title="Smart Grid Protocol Analysis", layout="wide")
+st.set_page_config(page_title="Ramadi Smart City Grid Management", layout="wide")
 
-DB_FILE = "grid_protocol_data.json"
+DB_FILE = "ramadi_grid_data.json"
 
 # دالة إدارة البيانات
 def load_history():
@@ -18,98 +18,106 @@ def load_history():
         with open(DB_FILE, "r") as f: return json.load(f)
     except: return []
 
-def save_entry(station, current):
+def save_entry(location, current, category, base_priority):
     history = load_history()
     entry = {
-        "المحطة": station,
+        "المنشأة": location,
+        "التصنيف": category,
         "التيار (A)": current,
-        "الوقت": datetime.now().strftime("%H:%M:%S.%f")[:-3], # وقت دقيق بالملي ثانية
-        "الحالة": "CRITICAL" if current >= 300 else "NORMAL"
+        "الوقت": datetime.now().strftime("%H:%M:%S"),
+        "الأولوية": base_priority  # رقم يعبر عن أهمية المكان هندسياً
     }
     history.append(entry)
+    # الاحتفاظ بآخر 60 سجل لمراقبة التطور الزمني
     with open(DB_FILE, "w") as f:
-        json.dump(history[-100:], f) # حفظ آخر 100 حركة فقط
+        json.dump(history[-60:], f)
 
-# --- القائمة الجانبية للتحكم ---
-st.sidebar.title("🛠️ لوحة التحكم بالنظام")
-mode = st.sidebar.toggle("تفعيل البروتوكول الذكي (Priority Protocol)", value=True)
-role = st.sidebar.selectbox("الدور:", ["المراقب (غرفة التحكم)", "طالب (إرسال يدوي)", "محاكي الإدخال التلقائي"])
+# --- القائمة الجانبية ---
+st.sidebar.title("🏢 إدارة طاقة مدينة الرمادي")
+mode = st.sidebar.selectbox("نظام إدارة البروتوكول:", ["بروتوكول الأولويات الذكي (Active)", "التوزيع المتساوي (No Protocol)"])
+role = st.sidebar.radio("الدور التشغيلي:", ["المراقب (غرفة التحكم)", "محاكي المنشآت (7 أماكن)"])
 
-if st.sidebar.button("مسح السجل بالكامل"):
+if st.sidebar.button("تصفير السجل التاريخي"):
     if os.path.exists(DB_FILE): os.remove(DB_FILE)
     st.rerun()
 
-# --- 1. واجهة الإدخال التلقائي السريع ---
-if role == "محاكي الإدخال التلقائي":
-    st.title("🚀 محاكي الإدخال التلقائي (4 محطات)")
-    st.warning("عند تفعيل هذا الخيار، سيتم إرسال بيانات عشوائية وسريعة من 4 مصادر لمحاكاة الضغط.")
+# --- 1. محاكي المنشآت السبعة (إرسال هادئ ومنظم) ---
+if role == "محاكي المنشآت (7 أماكن)":
+    st.title("🚀 محاكي التدفق الميداني")
+    st.info("سيقوم المحاكي بإرسال بيانات استهلاك التيار من 7 مواقع حيوية كل 4 ثوانٍ.")
     
-    run_sim = st.checkbox("ابدأ المحاكاة الآن")
-    if run_sim:
+    # تعريف المنشآت مع وزن الأولوية (Base Priority)
+    locations = [
+        {"name": "مستشفى الرمادي التعليمي", "cat": "حرجة (P1)", "p": 10},
+        {"name": "مصنع الأكسجين المركزي", "cat": "حرجة (P1)", "p": 10},
+        {"name": "محطة مياه الرمادي الكبرى", "cat": "خدمية (P2)", "p": 8},
+        {"name": "مبنى محافظة الأنبار", "cat": "حكومية (P2)", "p": 7},
+        {"name": "جامعة الأنبار - كلية الهندسة", "cat": "تعليمية (P3)", "p": 5},
+        {"name": "مول الرمادي التجاري", "cat": "تجارية (P3)", "p": 4},
+        {"name": "حي الأندلس السكني", "cat": "سكنية (P4)", "p": 2}
+    ]
+    
+    active_sim = st.checkbox("تفعيل البث التلقائي")
+    if active_sim:
         while True:
-            # إرسال بيانات عشوائية من الـ 4 محطات في نفس الوقت
-            for i in range(1, 5):
-                s_name = f"Station {i}"
-                val = random.randint(100, 550) # توليد أحمال عشوائية
-                save_entry(s_name, val)
-            time.sleep(0.5) # إرسال كل نصف ثانية (سرعة عالية)
-            st.toast("جاري إرسال حزم البيانات...")
+            loc = random.choice(locations)
+            val = random.randint(100, 500)
+            save_entry(loc["name"], val, loc["cat"], loc["p"])
+            st.toast(f"بث بيانات: {loc['name']} -> {val}A")
+            time.sleep(4) # إرسال كل 4 ثوانٍ (هدوء العرض)
 
-# --- 2. واجهة الطالب (إرسال يدوي) ---
-elif role == "طالب (إرسال يدوي)":
-    st.title("📲 وحدة التحكم اليدوية")
-    station_id = st.selectbox("اختر المحطة:", [f"Station {i}" for i in range(1, 5)])
-    val = st.slider("القيمة:", 0, 600, 200)
-    if st.button("إرسال"):
-        save_entry(station_id, val)
-        st.success("تم الإرسال")
-
-# --- 3. واجهة المراقب (الرسمية والذكية) ---
+# --- 2. واجهة المراقب (الرسمية والتحليلية) ---
 else:
-    st.title("🖥️ مركز مراقبة وتحليل البروتوكول")
-    
-    if mode:
-        st.success("✅ وضع البروتوكول: يتم فرز البيانات حسب الأولوية (الأخطر أولاً)")
-    else:
-        st.error("⚠️ وضع الفوضى: البيانات تعرض حسب وقت الوصول بدون تنظيم (خطر الانهيار)")
+    st.title("🖥️ مركز التحكم والسيطرة الوطني - الأنبار")
+    st.write(f"الحالة الأمنية للشبكة: **{mode}**")
 
-    @st.fragment(run_every="1s")
-    def update_dashboard():
-        data = load_history()
-        if not data:
-            st.info("بانتظار وصول البيانات...")
+    @st.fragment(run_every="2s")
+    def dashboard_update():
+        history = load_history()
+        if not history:
+            st.info("بانتظار استلام إشارات من المحطات...")
             return
 
-        df = pd.DataFrame(data)
+        df = pd.DataFrame(history)
 
-        # تطبيق "البروتوكول" (الفرز)
-        if mode:
-            # فرز حسب التيار (الأعلى أولاً) ثم الوقت
-            df_display = df.sort_values(by=["التيار (A)", "الوقت"], ascending=[False, False])
+        # منطق البروتوكول (Priority Sorting)
+        if mode == "بروتوكول الأولويات الذكي (Active)":
+            # الترتيب حسب الأولوية الأساسية للمكان + شدة التيار
+            df['Final_Score'] = df['الأولوية'] * 100 + df['التيار (A)']
+            df_display = df.sort_values(by="Final_Score", ascending=False)
         else:
-            # عرض كما هي (عشوائية أو حسب الوصول)
+            # ترتيب عشوائي حسب وقت الوصول فقط
             df_display = df.iloc[::-1]
 
-        # الرسم البياني المطور
-        st.subheader("📊 تحليل تذبذب الأحمال")
-        chart_df = df.pivot_table(index='الوقت', columns='المحطة', values='التيار (A)').ffill()
+        # 1. عدادات الحالة (Metrics) لأهم 4 منشآت
+        st.subheader("📍 مراقبة الأحمال الحالية")
+        m_cols = st.columns(4)
+        top_4 = df.drop_duplicates(subset=['المنشأة'], keep='last').tail(4)
+        for i, (idx, row) in enumerate(top_4.iterrows()):
+            m_cols[i].metric(row['المنشأة'], f"{row['التيار (A)']} A", row['التصنيف'])
+
+        st.markdown("---")
+
+        # 2. الرسم البياني الزمني (احترافي)
+        st.subheader("📊 المخطط البياني لتذبذب الطاقة")
+        chart_df = df.pivot_table(index='الوقت', columns='المنشأة', values='التيار (A)').ffill()
         st.line_chart(chart_df, height=300)
 
-        # جدول البيانات الرسمي
-        st.subheader("📋 سجل استلام الحزم (Data Packets Log)")
+        # 3. سجل البيانات التسلسلي
+        st.subheader("📋 السجل التاريخي لاستلام الحزم (Data Logging)")
         
-        def color_protocol(row):
-            if mode and row['التيار (A)'] >= 300:
-                return ['background-color: #9e0000; color: white'] * len(row)
-            elif not mode and row['التيار (A)'] >= 300:
-                return ['background-color: #444444; color: #ff4b4b'] * len(row)
+        def style_logic(row):
+            if row['الأولوية'] >= 9 and row['التيار (A)'] >= 300: # مستشفى أو أكسجين
+                return ['background-color: #580000; color: white; font-weight: bold'] * len(row)
+            elif row['التيار (A)'] >= 300:
+                return ['background-color: #664d03; color: white'] * len(row)
             return [''] * len(row)
 
         st.dataframe(
-            df_display.style.apply(color_protocol, axis=1),
+            df_display.drop(columns=['الأولوية', 'Final_Score'], errors='ignore').style.apply(style_logic, axis=1),
             use_container_width=True,
-            height=500
+            height=400
         )
 
-    update_dashboard()
-    
+    dashboard_update()
+        
