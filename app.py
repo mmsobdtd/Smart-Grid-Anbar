@@ -1,110 +1,73 @@
 import streamlit as st
 import pandas as pd
 import time
-import random
 
-st.set_page_config(page_title="Smart Grid Automatic Simulation", layout="wide")
+# إعدادات الصفحة
+st.set_page_config(page_title="Smart Grid Monitoring - Anbar University", layout="wide")
 
-# ======================
-# Session State
-# ======================
-if "data" not in st.session_state:
-    st.session_state.data = []
+st.title("⚡ نظام مراقبة الشبكة الذكية (محاكاة البروتوكول)")
+st.write("قسم الهندسة الكهربائية - جامعة الأنبار")
 
-if "protocol" not in st.session_state:
-    st.session_state.protocol = True
+# تعريف الثوابت (المعايير الهندسية)
+HIGH_THRESHOLD = 300 # $I > 300\text{ A}$ أولوية قصوى
+NORMAL_THRESHOLD = 250 # $I < 250\text{ A}$ حالة طبيعية
 
-if "running" not in st.session_state:
-    st.session_state.running = False
+# تفعيل أو تعطيل البروتوكول
+protocol_active = st.sidebar.toggle("تفعيل بروتوكول الأولوية (Protocol Mode)", value=False)
 
-# ======================
-# Stations & Priorities
-# ======================
-stations = {
-    "طالب 1 (Hospital)": 1,
-    "طالب 2 (Water)": 2,
-    "طالب 3 (Residential)": 3,
-    "طالب 4 (Lighting)": 3
-}
+st.sidebar.markdown("---")
+st.sidebar.info("بدون بروتوكول: تظهر البيانات بترتيب وصولها العشوائي فقط.\n\nمع البروتوكول: يتم فرز المحطات حسب خطورة الحمل.")
 
-# ======================
-# Title
-# ======================
-st.title("⚡ Smart Grid Automatic Load Simulation")
-st.markdown("### 4 Stations – Automatic Data Generation")
+# واجهة إدخال البيانات للطلاب الأربعة
+st.subheader("📥 إدخال بيانات المحطات (طلاب)")
+col1, col2, col3, col4 = st.columns(4)
 
-# ======================
-# Control Panel
-# ======================
-st.sidebar.header("🎛️ Control Panel")
+with col1:
+    s1 = st.number_input("محطة 1 (Amps)", min_value=0, value=200, key="st1")
+with col2:
+    s2 = st.number_input("محطة 2 (Amps)", min_value=0, value=200, key="st2")
+with col3:
+    s3 = st.number_input("محطة 3 (Amps)", min_value=0, value=200, key="st3")
+with col4:
+    s4 = st.number_input("محطة 4 (Amps)", min_value=0, value=200, key="st4")
 
-st.session_state.protocol = st.sidebar.toggle("تفعيل بروتوكول الأولوية", value=True)
+data = [
+    {"Station": "Station 1", "Current": s1},
+    {"Station": "Station 2", "Current": s2},
+    {"Station": "Station 3", "Current": s3},
+    {"Station": "Station 4", "Current": s4},
+]
 
-start = st.sidebar.button("▶ تشغيل المحاكاة")
-stop = st.sidebar.button("⏹ إيقاف المحاكاة")
-reset = st.sidebar.button("🔄 تصفير النظام")
+df = pd.DataFrame(data)
 
-if start:
-    st.session_state.running = True
+# منطق المعالجة (البروتوكول)
+st.divider()
 
-if stop:
-    st.session_state.running = False
-
-if reset:
-    st.session_state.running = False
-    st.session_state.data = []
-    st.experimental_rerun()
-
-# ======================
-# Network Status
-# ======================
-st.subheader("📡 حالة الشبكة")
-
-if st.session_state.protocol:
-    st.success("✅ بروتوكول الأولوية نشط")
+if not protocol_active:
+    st.warning("⚠️ الوضع الحالي: بدون بروتوكول (البيانات خام وغير منظمة)")
+    st.table(df) # عرض البيانات كما هي بدون معالجة
 else:
-    st.error("❌ بدون بروتوكول – الشبكة معرضة للانهيار")
+    st.success("✅ الوضع الحالي: بروتوكول الأولوية نشط")
+    
+    # تصنيف البيانات وإعطاء الأولوية
+    def assign_priority(current):
+        if current >= HIGH_THRESHOLD:
+            return "🔴 HIGH PRIORITY (Overload)"
+        elif current <= NORMAL_THRESHOLD:
+            return "🟢 Normal (Low Load)"
+        else:
+            return "🟡 Stable"
 
-# ======================
-# Automatic Data Generator
-# ======================
-if st.session_state.running:
-    for station, priority in stations.items():
-        voltage = random.randint(180, 420)
+    df['Status'] = df['Current'].apply(assign_priority)
+    
+    # فرز الجدول بحيث تظهر "الأولوية القصوى" في الأعلى دائماً
+    df = df.sort_values(by="Current", ascending=False)
+    
+    # عرض النتائج بشكل احترافي
+    st.dataframe(df.style.apply(lambda x: ['background-color: #ff4b4b' if 'HIGH' in str(v) else '' for v in x], axis=1), use_container_width=True)
 
-        st.session_state.data.append({
-            "الوقت": time.strftime("%H:%M:%S"),
-            "المحطة": station,
-            "القيمة (V)": voltage,
-            "الأولوية": priority
-        })
-
-    time.sleep(1)
-    st.experimental_rerun()
-
-# ======================
-# Display Data
-# ======================
-if st.session_state.data:
-    df = pd.DataFrame(st.session_state.data)
-
-    if st.session_state.protocol:
-        df = df.sort_values("الأولوية")
-
-    # Network Congestion Simulation
-    st.subheader("📊 سجل البيانات")
-
-    if not st.session_state.protocol and len(df) > 8:
-        st.error("🚨 Network Congestion Detected!")
-        st.warning("تضارب بيانات بسبب الإرسال المتزامن")
-    else:
-        st.dataframe(df.tail(12), use_container_width=True)
-
-    # ======================
-    # Graph
-    # ======================
-    st.subheader("📈 الرسم البياني اللحظي للجهد")
-    st.line_chart(df.set_index("الوقت")["القيمة (V)"])
-
-else:
-    st.info("لا توجد بيانات بعد")
+    # إشارات البروتوكول (Alerts)
+    for index, row in df.iterrows():
+        if row['Current'] >= HIGH_THRESHOLD:
+            st.error(f"🚨 إنذار من {row['Station']}: تم اكتشاف حمل زائد ({row['Current']}A) - جاري تحويل الطاقة!")
+            
