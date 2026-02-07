@@ -62,7 +62,7 @@ if role == "المحاكي (Simulator)":
             loc = random.choice(locations)
             val = random.randint(250, 550)
             save_entry(loc["n"], val, loc["c"], loc["w"])
-            time.sleep(3)
+            time.sleep(1)
             st.rerun()
 
 # --- 3. واجهة المراقب ---
