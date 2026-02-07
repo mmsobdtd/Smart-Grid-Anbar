@@ -3,102 +3,87 @@ import pandas as pd
 import json
 import os
 import time
-from datetime import datetime
 
-# إعدادات الصفحة الرسمية
-st.set_config(page_title="Smart Grid Monitoring System", layout="wide")
+# إعدادات الصفحة
+st.set_page_config(page_title="Anbar Smart Grid - Live", layout="wide")
 
-DB_FILE = "grid_history.json"
+DB_FILE = "grid_live_data.json"
 
-# دالة إدارة سجل البيانات (تخزين بصيغة القائمة لرؤية كل التحديثات)
-def load_history():
+# دالة إدارة البيانات
+def load_data():
     if not os.path.exists(DB_FILE):
-        return []
+        data = {f"Station {i}": {"current": 200, "last_update": time.time()} for i in range(1, 5)}
+        save_data(data)
+        return data
     try:
         with open(DB_FILE, "r") as f:
             return json.load(f)
     except:
-        return []
+        return {f"Station {i}": {"current": 200, "last_update": time.time()} for i in range(1, 5)}
 
-def save_to_history(station, current):
-    history = load_history()
-    new_entry = {
-        "المحطة": station,
-        "التيار (A)": current,
-        "الوقت": datetime.now().strftime("%H:%M:%S"),
-        "الحالة": "🔴 حمل زائد" if current >= 300 else ("🟢 مستقر" if current <= 250 else "🟡 تحذير")
-    }
-    history.append(new_entry)
-    # الاحتفاظ بآخر 100 إدخال فقط لضمان سرعة النظام
+def save_data(data):
     with open(DB_FILE, "w") as f:
-        json.dump(history[-100:], f)
+        json.dump(data, f)
 
-# --- القائمة الجانبية ---
-st.sidebar.markdown("### 🛠️ لوحة التحكم")
-role = st.sidebar.radio("تحديد الدور:", ["طالب (إرسال بيانات)", "المراقب (غرفة التحكم)"])
-if st.sidebar.button("مسح السجل بالكامل"):
-    if os.path.exists(DB_FILE):
-        os.remove(DB_FILE)
-    st.rerun()
+# --- واجهة التحكم الجانبية ---
+st.sidebar.header("⚙️ إعدادات النظام")
+mode = st.sidebar.selectbox("وضعية الشبكة:", ["مع البروتوكول (نظام ذكي)", "بدون بروتوكول (انهيار الشبكة)"])
+role = st.sidebar.radio("دخول بصفتك:", ["طالب (المحطة)", "المراقب (غرفة التحكم)"])
 
-# --- واجهة الطالب ---
-if role == "طالب (إرسال بيانات)":
-    st.title("📲 وحدة إدخال البيانات")
-    station_id = st.selectbox("اختر المحطة الخاصة بك:", [f"Station {i}" for i in range(1, 5)])
+# --- واجهة الطالب (إرسال سريع) ---
+if role == "طالب (المحطة)":
+    st.header("📲 إرسال البيانات اللحظي")
+    station_id = st.selectbox("اختر محطتك:", [f"Station {i}" for i in range(1, 5)])
     
-    val = st.slider("تعديل قيمة التيار (Amps):", 0, 600, 200, step=5)
+    # التحديث هنا يتم بمجرد تحريك السلايدر
+    current_val = load_data()[station_id]["current"]
+    val = st.slider(f"تحكم في تيار {station_id}:", 0, 600, current_val)
     
-    if st.button("إرسال التحديث"):
-        save_to_history(station_id, val)
-        st.success(f"تم تسجيل القيمة {val}A للمحطة {station_id}")
+    if val != current_val:
+        data = load_data()
+        data[station_id] = {"current": val, "last_update": time.time()}
+        save_data(data)
+        st.success(f"جاري البث... {val} A")
 
-# --- واجهة المراقب الرسمية ---
+# --- واجهة المراقب (تحديث تلقائي كل ثانية) ---
 else:
-    st.title("🖥️ نظام مراقبة الشبكة الذكية - جامعة الأنبار")
-    st.markdown("---")
-
-    @st.fragment(run_every="1s")
-    def monitor_dashboard():
-        history = load_history()
-        if not history:
-            st.info("بانتظار استلام بيانات من الطلاب...")
-            return
-
-        df = pd.DataFrame(history)
-        
-        # 1. قسم المؤشرات العلوية (آخر قراءة لكل محطة)
-        st.subheader("📍 الحالة اللحظية للمحطات")
-        cols = st.columns(4)
-        for i in range(1, 5):
-            station_name = f"Station {i}"
-            station_data = df[df["المحطة"] == station_name]
-            if not station_data.empty:
-                latest = station_data.iloc[-1]
-                cols[i-1].metric(label=station_name, value=f"{latest['التيار (A)']} A", delta=latest['الحالة'])
-
-        st.markdown("---")
-
-        # 2. الرسم البياني المطور (تطور الأحمال مع الوقت)
-        st.subheader("📊 تحليل الرسم البياني للأحمال")
-        # ترتيب البيانات للرسم البياني
-        chart_df = df.pivot(index='الوقت', columns='المحطة', values='التيار (A)').ffill()
-        st.line_chart(chart_df, height=300)
-
-        # 3. جدول البيانات الرسمي (سجل تاريخي كامل)
-        st.subheader("📋 سجل استلام البيانات الكامل (History Log)")
-        
-        # تنسيق الجدول ليكون رسمياً
-        def style_rows(row):
-            if row['التيار (A)'] >= 300:
-                return ['background-color: #ffcccc'] * len(row)
-            return [''] * len(row)
-
-        # عرض الجدول معكوساً (الأحدث في الأعلى)
-        st.dataframe(
-            df.iloc[::-1].style.apply(style_rows, axis=1),
-            use_container_width=True,
-            height=400
-        )
-
-    monitor_dashboard()
+    st.header("🖥️ شاشة المراقبة الحية (تحديث كل 1 ثانية)")
     
+    # هذه المنطقة ستحدث نفسها تلقائياً كل ثانية
+    @st.fragment(run_every="1s")
+    def monitor_ui():
+        data = load_data()
+        raw_list = []
+        for s, info in data.items():
+            raw_list.append({"Station": s, "Current": info["current"], "Time": info["last_update"]})
+        
+        df = pd.DataFrame(raw_list)
+
+        # 1. وضعية بدون بروتوكول (Chaos Mode)
+        if mode == "بدون بروتوكول (انهيار الشبكة)":
+            st.error("🚨 وضع الانهيار: البيانات تتداخل ولا يوجد ترتيب أولويات!")
+            # عرض البيانات بترتيب عشوائي تماماً لمحاكاة ضياع الحزم (Collisions)
+            st.table(df.sample(frac=1).reset_index(drop=True))
+            
+            if df['Current'].max() > 300:
+                st.markdown("<h2 style='color:red; text-align:center;'>⚠️ تداخل في الإشارات - تأخير في الاستجابة ⚠️</h2>", unsafe_allow_html=True)
+
+        # 2. وضعية مع البروتوكول (Priority Protocol)
+        else:
+            st.success("✅ البروتوكول يعمل: تنظيم البيانات حسب خطورة الحمل")
+            
+            # منطق البروتوكول: فرز حسب الأخطر (Current)
+            df['Priority'] = df['Current'].apply(lambda x: "🔴 HIGH" if x >= 300 else ("🟢 Low" if x <= 250 else "🟡 Mid"))
+            df_sorted = df.sort_values(by="Current", ascending=False)
+            
+            # عرض المقاييس (Metrics)
+            cols = st.columns(4)
+            for i, (idx, row) in enumerate(df_sorted.iterrows()):
+                cols[i].metric(row['Station'], f"{row['Current']} A", row['Priority'])
+
+            st.bar_chart(df_sorted.set_index('Station')['Current'])
+            st.dataframe(df_sorted, use_container_width=True)
+
+    # تشغيل منطقة التحديث التلقائي
+    monitor_ui()
+
