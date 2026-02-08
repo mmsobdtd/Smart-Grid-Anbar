@@ -7,9 +7,10 @@ import random
 from datetime import datetime
 
 # --- 1. إعدادات الصفحة ---
-st.set_page_config(page_title="نظام طاقة الأنبار - واجهة المراقبة الاحترافية", layout="wide")
+st.set_page_config(page_title="نظام طاقة الأنبار - التحكم المركزي العام", layout="wide")
 
-DB_FILE = "anbar_black_text_v1.json"
+# ملف البيانات المشترك بين كل المستخدمين
+DB_FILE = "anbar_global_sync_v1.json"
 
 STATIONS_SPECS = {
     "مستشفى الرمادي التعليمي": 1000,
@@ -19,34 +20,37 @@ STATIONS_SPECS = {
     "حي التأميم (سكني)": 500
 }
 
-if 'protocol_active' not in st.session_state:
-    st.session_state.protocol_active = False
-
-# --- 2. إدارة البيانات ---
+# --- 2. إدارة البيانات (المزامنة العالمية) ---
 def load_data():
     if not os.path.exists(DB_FILE):
-        return {"entries": [], "load_val": 0.0, "collapsed": False}
+        # إضافة الحقل الجديد protocol_on لقاعدة البيانات
+        return {"entries": [], "load_val": 0.0, "collapsed": False, "protocol_on": False}
     try:
         with open(DB_FILE, "r", encoding='utf-8') as f:
-            return json.load(f)
+            data = json.load(f)
+            if "protocol_on" not in data: data["protocol_on"] = False
+            return data
     except:
-        return {"entries": [], "load_val": 0.0, "collapsed": False}
+        return {"entries": [], "load_val": 0.0, "collapsed": False, "protocol_on": False}
 
 def save_data(data):
     data["load_val"] = float(max(0.0, min(data["load_val"], 100.0)))
     with open(DB_FILE, "w", encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-def apply_system_logic(new_readings, protocol_on):
+def apply_system_logic(new_readings):
     data = load_data()
     if data["collapsed"]: return data
+    
+    # جلب حالة البروتوكول من الملف وليس من واجهة المستخدم المحلية
+    is_protected = data.get("protocol_on", False)
     
     if new_readings:
         data["entries"].extend(new_readings)
         data["entries"] = data["entries"][-40:]
     
-    if protocol_on:
-        # التوازن عند 25%
+    if is_protected:
+        # إذا البروتوكول فعال (عالمياً): التوازن عند 25%
         target = 25.0
         if data["load_val"] > (target + 2):
             data["load_val"] -= 8.0
@@ -55,10 +59,11 @@ def apply_system_logic(new_readings, protocol_on):
         else:
             data["load_val"] = random.uniform(23.0, 27.0)
     else:
+        # بدون بروتوكول: الضغط يرتفع مع كل إرسال (يدوي أو تلقائي)
         if new_readings:
             data["load_val"] += len(new_readings) * 2.0
         else:
-            data["load_val"] = max(0.0, data["load_val"] - 4.0)
+            data["load_val"] = max(0.0, data["load_val"] - 4.0) # تبريد تلقائي
             
     if data["load_val"] >= 100.0:
         data["load_val"] = 100.0
@@ -67,47 +72,58 @@ def apply_system_logic(new_readings, protocol_on):
     save_data(data)
     return data
 
+# دالة لتغيير حالة البروتوكول عالمياً
+def toggle_global_protocol(status):
+    data = load_data()
+    data["protocol_on"] = status
+    save_data(data)
+
 # --- 3. الواجهة ---
 st.sidebar.title("⚡ مركز سيطرة الرمادي")
 page = st.sidebar.radio("القائمة:", ["🕹️ غرفة التحكم", "🖥️ شاشة المراقبة"])
 
 if st.sidebar.button("♻️ تصفير النظام"):
     if os.path.exists(DB_FILE): os.remove(DB_FILE)
-    st.session_state.protocol_active = False
     st.rerun()
 
 # ==========================================
 # صفحة التحكم
 # ==========================================
 if page == "🕹️ غرفة التحكم":
-    st.title("🕹️ وحدة التحكم والإرسال")
+    st.title("🕹️ وحدة التحكم والإرسال (مزامنة عالمية)")
     
-    # تفعيل البروتوكول من هنا
-    st.session_state.protocol_active = st.toggle("🛡️ تفعيل بروتوكول الحماية", value=st.session_state.protocol_active)
+    # تحميل البيانات الحالية لمعرفة حالة البروتوكول عند البقية
+    current_data = load_data()
+    
+    # زر البروتوكول (يغير الحالة في الملف المشترك)
+    new_proto_status = st.toggle("🛡️ تفعيل بروتوكول الحماية (سيطبق عند الجميع)", value=current_data["protocol_on"])
+    if new_proto_status != current_data["protocol_on"]:
+        toggle_global_protocol(new_proto_status)
+        st.rerun()
     
     state = load_data()
     if state["collapsed"]:
-        st.error("🚨 النظام في حالة انهيار بسبب الضغط.")
+        st.error("🚨 النظام منهار.")
     else:
-        apply_system_logic([], st.session_state.protocol_active)
+        apply_system_logic([]) # تحديث الحالة
         col1, col2 = st.columns(2)
         with col1:
-            st.subheader("🔧 إرسال يدوي")
+            st.subheader("🔧 إرسال يدوي (يتأثر بالبروتوكول)")
             for name, m_val in STATIONS_SPECS.items():
                 val = st.slider(f"{name}", 0, 1500, value=int(m_val*0.6), key=f"s_{name}")
                 if st.button(f"بث {name}", key=f"b_{name}"):
                     pct = (val / m_val) * 100
-                    # تعديل عتبة الخطر لتكون 95% فأكثر كما طلبت
                     stt = "🔴 خطر" if pct >= 95 else "🟡 تنبيه" if pct >= 85 else "🟢 مستقر"
-                    lvl = 3 if pct >= 95 else 2 if pct >= 85 else 1
+                    # الإرسال اليدوي الآن يمر عبر نفس المنطق
                     apply_system_logic([{
                         "المحطة": name, "التيار (A)": val, "الحالة": stt, 
-                        "level": lvl, "timestamp": time.time(), "الوقت": datetime.now().strftime("%H:%M:%S")
-                    }], st.session_state.protocol_active)
+                        "level": 3 if pct >= 95 else 2 if pct >= 85 else 1,
+                        "timestamp": time.time(), "الوقت": datetime.now().strftime("%H:%M:%S")
+                    }])
                     st.toast(f"تم إرسال {name}")
 
         with col2:
-            st.subheader("🚀 بث تلقائي (4 محطات)")
+            st.subheader("🚀 بث تلقائي")
             run_auto = st.checkbox("تشغيل البث المستمر")
             auto_place = st.empty()
             while run_auto:
@@ -117,14 +133,14 @@ if page == "🕹️ غرفة التحكم":
                 batch = []
                 for n in selected:
                     s_max = STATIONS_SPECS[n]
-                    # جعل القيمة نادراً ما تصل لـ 95% لتقليل ظهور اللون الأحمر
-                    v = random.randint(int(s_max*0.4), int(s_max*1.02))
+                    v = random.randint(int(s_max*0.4), int(s_max*1.2))
                     pct = (v / s_max) * 100
                     stt = "🔴 خطر" if pct >= 95 else "🟡 تنبيه" if pct >= 85 else "🟢 مستقر"
                     batch.append({"المحطة": n, "التيار (A)": v, "الحالة": stt, "level": 3 if pct >= 95 else 2 if pct >= 85 else 1, "timestamp": b_time, "الوقت": b_clock})
                 
-                apply_system_logic(batch, st.session_state.protocol_active)
-                auto_place.info(f"📡 مراقبة الضغط: {load_data()['load_val']:.1f}%")
+                apply_system_logic(batch)
+                updated_state = load_data()
+                auto_place.info(f"📡 الضغط: {updated_state['load_val']:.1f}% | البروتوكول العام: {'نشط' if updated_state['protocol_on'] else 'مطفي'}")
                 time.sleep(1)
 
 # ==========================================
@@ -134,56 +150,43 @@ else:
     st.title("🖥️ شاشة المراقبة")
     mon_placeholder = st.empty()
     
-    # CSS لضمان سواد الخط وبياض الجدول
     st.markdown("""
         <style>
-        .stDataFrame { background-color: white !important; border: 1px solid #dee2e6; }
-        .collapse-msg {
-            background-color: white; color: #dc3545; padding: 15px;
-            border: 2px solid #dc3545; border-radius: 8px; text-align: center;
-            font-weight: bold; width: 320px; margin: 40px auto;
-        }
-        /* تلوين نصوص الجدول وضمان اللون الأسود */
+        .stDataFrame { background-color: white !important; }
+        .collapse-msg { background-color: white; color: #dc3545; padding: 15px; border: 2px solid #dc3545; border-radius: 8px; text-align: center; font-weight: bold; width: 320px; margin: 40px auto; }
         div[data-testid="stDataFrame"] td { color: black !important; font-weight: 500; }
         </style>
     """, unsafe_allow_html=True)
 
     while True:
-        state = apply_system_logic([], st.session_state.protocol_active)
+        state = apply_system_logic([]) # التبريد أو الموازنة تتم آلياً بناءً على حالة الملف
         with mon_placeholder.container():
             if state["collapsed"]:
                 st.markdown('<div class="collapse-msg">🚨 النظام انهار بسبب ضغط على الشبكة</div>', unsafe_allow_html=True)
                 break
             
             v = float(state.get("load_val", 0.0))
-            p_color = "red" if v > 80 else "orange" if v > 40 else "green"
-            st.markdown(f"### ضغط السيرفر: :{p_color}[{v:.1f}%]")
+            is_p = state.get("protocol_on", False)
+            p_color = "blue" if is_p else ("red" if v > 80 else "orange" if v > 40 else "green")
+            
+            st.markdown(f"### ضغط السيرفر: :{p_color}[{v:.1f}%] {'(🛡️ محمي)' if is_p else ''}")
             st.progress(max(0.0, min(v / 100.0, 1.0)))
             
             if state["entries"]:
                 df = pd.DataFrame(state["entries"])
-                # الفرز الرباعي: الأحدث أولاً، ثم الأخطر داخل المجموعة
                 df_display = df.sort_values(by=['timestamp', 'level'], ascending=[False, False])
 
-                # دالة التنسيق: خلفية بيضاء وخط أسود، مع تمييز الحالة فقط بلون خلفية خفيف جداً
                 def style_table(row):
                     lvl = row.get('level', 1)
-                    if lvl == 3: # خطر (95%+)
-                        return ['background-color: #ffcccc; color: black; font-weight: bold'] * len(row)
-                    if lvl == 2: # تنبيه (85%-95%)
-                        return ['background-color: #fff4cc; color: black'] * len(row)
-                    return ['background-color: #d4edda; color: black'] * len(row) # مستقر
+                    if lvl == 3: return ['background-color: white; color: #ff0000; font-weight: bold'] * len(row)
+                    if lvl == 2: return ['background-color: white; color: #ffcc00; font-weight: bold'] * len(row)
+                    return ['background-color: white; color: #00cc00; font-weight: bold'] * len(row)
 
-                st.subheader("📋 حالة المحطات")
-                st.dataframe(
-                    df_display[["المحطة", "التيار (A)", "الحالة", "الوقت"]].head(20).style.apply(style_table, axis=1),
-                    use_container_width=True, hide_index=True
-                )
+                st.dataframe(df_display[["المحطة", "التيار (A)", "الحالة", "الوقت"]].head(20).style.apply(style_table, axis=1), use_container_width=True, hide_index=True)
                 
-                st.subheader("📊 مخطط الأحمال")
                 chart_df = df.pivot_table(index='الوقت', columns='المحطة', values='التيار (A)').ffill()
                 st.line_chart(chart_df, height=200)
             else:
-                st.info("بانتظار البيانات القادمة...")
+                st.info("بانتظار البيانات...")
         time.sleep(1)
             
