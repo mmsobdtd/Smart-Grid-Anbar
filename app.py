@@ -4,123 +4,105 @@ import json
 import os
 import time
 import random
-from datetime import datetime
 
-# إعدادات الصفحة الرسمية (تصحيح السطر 9 الشهير)
-st.set_page_config(page_title="Ramadi Industrial Grid Control", layout="wide")
+# إعدادات الصفحة
+st.set_page_config(page_title="Smart Grid Protocol Demo", layout="wide")
 
-DB_FILE = "anbar_grid_system.json"
+DB_FILE = "grid_state.json"
 
-# دالة إدارة البيانات
+# دالة لإدارة البيانات المشتركة بين الطلاب والسيرفر
 def load_data():
-    if not os.path.exists(DB_FILE): return []
-    try:
-        with open(DB_FILE, "r") as f: return json.load(f)
-    except: return []
+    if not os.path.exists(DB_FILE):
+        data = {f"Station {i}": {"current": 200, "timestamp": time.time()} for i in range(1, 5)}
+        save_data(data)
+        return data
+    with open(DB_FILE, "r") as f:
+        return json.load(f)
 
-def save_entry(location, current, category, weight):
-    history = load_data()
-    entry = {
-        "المنشأة": location,
-        "نوع الحمل": category,
-        "التيار (A)": current,
-        "التوقيت": datetime.now().strftime("%H:%M:%S"),
-        "الوزن": weight # لترتيب الأولويات الهندسية
-    }
-    history.append(entry)
+def save_data(data):
     with open(DB_FILE, "w") as f:
-        json.dump(history[-80:], f) # حفظ آخر 80 إدخال للسجلات الزمنية
+        json.dump(data, f)
 
-# --- القائمة الجانبية (Sidebar) ---
-st.sidebar.title("🛡️ مركز التحكم القومي")
-st.sidebar.markdown("---")
-mode = st.sidebar.toggle("تفعيل بروتوكول الأولويات (Smart Mode)", value=True)
-role = st.sidebar.selectbox("الدور التشغيلي:", ["المراقب العام (Dashboard)", "محاكي الأحمال (7 مواقع)"])
+# تحميل البيانات الحالية
+current_loads = load_data()
 
-if st.sidebar.button("مسح سجل البيانات"):
-    if os.path.exists(DB_FILE): os.remove(DB_FILE)
-    st.rerun()
+# --- القائمة الجانبية (التحكم في العرض) ---
+st.sidebar.title("🎮 لوحة التحكم بالعرض")
+mode = st.sidebar.radio("اختر وضع النظام:", ["بدون بروتوكول (Chaos)", "مع البروتوكول (Smart)"])
+role = st.sidebar.selectbox("من أنت؟", ["طالب (المحطة)", "المراقب (غرفة التحكم)"])
 
-# --- 1. محاكي المنشآت (7 مواقع مشهورة في الأنبار) ---
-if role == "محاكي المنشآت (7 مواقع)":
-    st.title("🚀 محاكي التدفق الميداني - الأنبار")
-    st.info("النظام يحاكي الآن 7 منشآت بأحمال ثقيلة ومتقاربة (300A - 550A).")
+# --- واجهة الطالب (تحديث لحظي) ---
+if role == "طالب (المحطة)":
+    st.header("📲 وحدة تحكم المحطة الفرعية")
+    station_id = st.selectbox("اختر رقم محطتك:", list(current_loads.keys()))
     
-    locations = [
-        {"name": "مستشفى الرمادي التعليمي", "cat": "حرجة (P1)", "w": 10},
-        {"name": "معمل سمنت كبيسة", "cat": "صناعي ثقيل (P1)", "w": 9},
-        {"name": "جامعة الأنبار - المجمع الرئيسي", "cat": "تعليمي (P2)", "w": 7},
-        {"name": "مول الرمادي الكبير", "cat": "تجاري (P2)", "w": 6},
-        {"name": "محطة مياه الرمادي الكبرى", "cat": "خدمي (P1)", "w": 9},
-        {"name": "ملعب الأنبار الأولمبي", "cat": "بنية تحتية (P3)", "w": 5},
-        {"name": "مصفى الأنبار النفطي", "cat": "صناعي ثقيل (P1)", "w": 9}
-    ]
+    # تحديث البيانات فور تغيير المنزلق
+    val = st.slider("اسحب لتغيير الأمبيرية (I):", 0, 600, current_loads[station_id]["current"])
     
-    if st.checkbox("بدء المحاكاة التلقائية (إرسال كل 4 ثوانٍ)"):
-        while True:
-            loc = random.choice(locations)
-            # أحمال عالية متقاربة لمحاكاة الضغط
-            val = random.randint(280, 580)
-            save_entry(loc["name"], val, loc["cat"], loc["w"])
-            st.toast(f"إرسال: {loc['name']} بقيمة {val}A")
-            time.sleep(4)
+    if val != current_loads[station_id]["current"]:
+        current_loads[station_id]["current"] = val
+        current_loads[station_id]["timestamp"] = time.time()
+        save_data(current_loads)
+        st.success(f"تم تحديث البيانات لحظياً: {val} A")
 
-# --- 2. واجهة المراقب (الرسمية والرسومية) ---
+# --- واجهة المراقب (غرفة التحكم) ---
 else:
-    st.title("🖥️ نظام مراقبة استقرار الشبكة الذكية")
-    st.caption("جامعة الأنبار - كلية الهندسة | قسم الكهرباء")
+    st.header("🖥️ غرفة التحكم المركزية - جامعة الأنبار")
+    st.write(f"الوضع الحالي: **{mode}**")
     
-    @st.fragment(run_every="2s")
-    def render_dashboard():
-        data = load_data()
-        if not data:
-            st.warning("بانتظار استقبال البيانات من الحقل...")
-            return
+    # زر للتحديث اليدوي (لأن الطلاب يرسلون بياناتهم باستمرار)
+    if st.button("تحديث لوحة البيانات 🔄"):
+        st.rerun()
 
-        df = pd.DataFrame(data)
+    # تحويل البيانات لجدول
+    raw_data = []
+    for s, info in current_loads.items():
+        raw_data.append({"Station": s, "Current": info["current"], "Time": info["timestamp"]})
+    df = pd.DataFrame(raw_data)
 
-        # منطق البروتوكول (Sorting Logic)
-        if mode:
-            # ترتيب حسب (الأولوية الهندسية * القيمة) لإبراز الأخطر
-            df['Score'] = df['الوزن'] * 100 + df['التيار (A)']
-            df_display = df.sort_values(by="Score", ascending=False)
-        else:
-            # ترتيب عشوائي حسب وقت الوصول (Chaos)
-            df_display = df.iloc[::-1]
+    # --- سيناريو 1: بدون بروتوكول (انهيار الشبكة) ---
+    if mode == "بدون بروتوكول (Chaos)":
+        st.error("🚨 تحذير: النظام يعمل بدون قواعد (No Protocol)")
+        st.warning("الملاحظة: البيانات تصل بشكل عشوائي، لا يوجد ترتيب للأولويات، النظام عرضة للانهيار.")
+        
+        # محاكاة "فوضى": عرض البيانات بترتيب زمني عشوائي أو غير مرتب
+        st.subheader("📋 سجل الحزم الواردة (تداخل البيانات)")
+        st.write("بيانات خام متداخلة (Collisions):")
+        st.table(df.sample(frac=1)) # عرض البيانات بترتيب عشوائي تماماً لمحاكاة التداخل
+        
+        # محاكاة الانهيار بصرياً
+        if df['Current'].max() > 400:
+            st.markdown("<h1 style='color:red; text-align:center;'>SYSTEM OVERLOAD - NETWORK COLLAPSE</h1>", unsafe_allow_html=True)
+            st.image("https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNHJmNjR4bm16Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6JmVwPXYxX2ludGVybmFsX2dpZl9ieV9pZCZjdD1n/3o7TKMGpxPucK8hLJC/giphy.gif", width=400)
 
-        # --- القسم الأول: المؤشرات (Metrics) ---
-        cols = st.columns(4)
-        unique_locs = df.drop_duplicates(subset=['المنشأة'], keep='last').tail(4)
-        for i, (idx, row) in enumerate(unique_locs.iterrows()):
-            cols[i].metric(row['المنشأة'], f"{row['التيار (A)']} A", f"P{row['الوزن']}")
+    # --- سيناريو 2: مع البروتوكول (تنظيم وأولوية) ---
+    else:
+        st.success("✅ البروتوكول الذكي نشط (Priority Protocol Active)")
+        
+        # تطبيق منطق الأولويات: 300A (خطر) | 250A (طبيعي)
+        def classify(c):
+            if c >= 300: return "🔴 HIGH PRIORITY (Critical)"
+            elif c <= 250: return "🟢 Normal"
+            else: return "🟡 Warning"
 
-        st.markdown("---")
-
-        # --- القسم الثاني: الرسم البياني (Focus on Visuals) ---
-        st.subheader("📈 تحليل استقرارية الأحمال (Real-time Load Analysis)")
-        # تحضير البيانات للرسم البياني الزمني
-        chart_df = df.pivot_table(index='التوقيت', columns='المنشأة', values='التيار (A)').ffill()
-        st.line_chart(chart_df, height=350, use_container_width=True)
+        df['Status'] = df['Current'].apply(classify)
+        
+        # الفرز حسب الأولوية (الأخطر في الأعلى)
+        df_sorted = df.sort_values(by="Current", ascending=False)
+        
+        # عرض الرسوم البيانية المنظمة
+        st.subheader("📊 مراقبة استقرار الأحمال")
+        st.bar_chart(df_sorted.set_index('Station')['Current'])
 
         
 
-        # --- القسم الثالث: جدول البيانات (Professional Logging) ---
-        st.subheader("📋 سجل البيانات الفني (Sequential Data Packets)")
-        
-        def highlight_danger(row):
-            # تمييز المستشفى والمعامل الثقيلة عند تجاوز 400A
-            if row['الوزن'] >= 9 and row['التيار (A)'] >= 400:
-                return ['background-color: #7b0000; color: white; font-weight: bold'] * len(row)
-            elif row['التيار (A)'] >= 400:
-                return ['background-color: #5c4400; color: white'] * len(row)
-            return [''] * len(row)
+        # عرض الجدول المنظم
+        st.subheader("📋 جدول البيانات المنظم حسب الأولوية")
+        st.dataframe(df_sorted.style.highlight_max(axis=0, color='red'), use_container_width=True)
 
-        # عرض الجدول مع استبعاد أعمدة الترتيب الداخلية
-        st.dataframe(
-            df_display.drop(columns=['الوزن', 'Score'], errors='ignore').style.apply(highlight_danger, axis=1),
-            use_container_width=True,
-            height=450
-        )
-
-    render_dashboard()
-    
+        # التنبيهات
+        critical = df_sorted[df_sorted['Current'] >= 300]
+        if not critical.empty:
+            for _, row in critical.iterrows():
+                st.toast(f"🚨 تنبيه عاجل: {row['Station']} تجاوزت الحد المسموح!", icon="🔥")
+                
