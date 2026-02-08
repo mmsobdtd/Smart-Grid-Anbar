@@ -3,121 +3,124 @@ import pandas as pd
 import json
 import os
 import time
+import random
 from datetime import datetime
 
-# إعدادات الصفحة الرسمية
-st.set_page_config(page_title="نظام إدارة أحمال الأنبار - إدخال يدوياً", layout="wide")
+# إعدادات الصفحة الرسمية (تصحيح السطر 9 الشهير)
+st.set_page_config(page_title="Ramadi Industrial Grid Control", layout="wide")
 
-DB_FILE = "anbar_manual_grid.json"
+DB_FILE = "anbar_grid_system.json"
 
-# --- تعريف المنشآت والمتوسطات المرجعية ---
-LOCATIONS_CONFIG = {
-    "مستشفى الرمادي التعليمي": {"avg": 400, "priority": 10},
-    "معمل زجاج الرمادي": {"avg": 500, "priority": 10},
-    "جامعة الأنبار (المجمع)": {"avg": 350, "priority": 8},
-    "حي التأميم (المغذي الرئيسي)": {"avg": 300, "priority": 7}
-}
-
+# دالة إدارة البيانات
 def load_data():
     if not os.path.exists(DB_FILE): return []
     try:
-        with open(DB_FILE, "r") as f:
-            content = f.read()
-            return json.loads(content) if content else []
+        with open(DB_FILE, "r") as f: return json.load(f)
     except: return []
 
-def save_entry(name, current):
+def save_entry(location, current, category, weight):
     history = load_data()
-    avg = LOCATIONS_CONFIG[name]["avg"]
-    
-    # منطق تصنيف الحالة بناءً على المتوسط
-    if current < avg:
-        status, level = "🟢 مستقر (Normal)", 1
-    elif avg <= current < (avg * 1.2):
-        status, level = "🟡 تنبيه (Warning)", 2
-    else:
-        status, level = "🔴 خطر (Critical)", 3
-
     entry = {
-        "المنشأة": name,
+        "المنشأة": location,
+        "نوع الحمل": category,
         "التيار (A)": current,
-        "المتوسط": avg,
-        "الحالة": status,
-        "الوقت": datetime.now().strftime("%H:%M:%S"),
-        "level": level,
-        "p": LOCATIONS_CONFIG[name]["priority"]
+        "التوقيت": datetime.now().strftime("%H:%M:%S"),
+        "الوزن": weight # لترتيب الأولويات الهندسية
     }
     history.append(entry)
     with open(DB_FILE, "w") as f:
-        json.dump(history[-100:], f)
+        json.dump(history[-80:], f) # حفظ آخر 80 إدخال للسجلات الزمنية
 
-# --- القائمة الجانبية ---
-st.sidebar.title("🛂 وحدة التحكم")
-mode = st.sidebar.toggle("تفعيل بروتوكول الأولوية", value=True)
-role = st.sidebar.radio("اختر المهمة:", ["إدخال بيانات (الطالب)", "شاشة المراقبة (المراقب)"])
+# --- القائمة الجانبية (Sidebar) ---
+st.sidebar.title("🛡️ مركز التحكم القومي")
+st.sidebar.markdown("---")
+mode = st.sidebar.toggle("تفعيل بروتوكول الأولويات (Smart Mode)", value=True)
+role = st.sidebar.selectbox("الدور التشغيلي:", ["المراقب العام (Dashboard)", "محاكي الأحمال (7 مواقع)"])
 
-if st.sidebar.button("مسح السجلات"):
+if st.sidebar.button("مسح سجل البيانات"):
     if os.path.exists(DB_FILE): os.remove(DB_FILE)
     st.rerun()
 
-# --- 1. واجهة إدخال البيانات (يدوياً) ---
-if role == "إدخال بيانات (الطالب)":
-    st.title("📥 وحدة إدخال البيانات الميدانية")
-    st.info("قم باختيار المنشأة وإدخال قيمة التيار المقاسة حالياً.")
+# --- 1. محاكي المنشآت (7 مواقع مشهورة في الأنبار) ---
+if role == "محاكي المنشآت (7 مواقع)":
+    st.title("🚀 محاكي التدفق الميداني - الأنبار")
+    st.info("النظام يحاكي الآن 7 منشآت بأحمال ثقيلة ومتقاربة (300A - 550A).")
     
-    col1, col2 = st.columns(2)
-    with col1:
-        name = st.selectbox("المنشأة المستهدفة:", list(LOCATIONS_CONFIG.keys()))
-    with col2:
-        current_val = st.number_input("قيمة التيار (Amps):", min_value=0, max_value=1000, value=LOCATIONS_CONFIG[name]["avg"])
+    locations = [
+        {"name": "مستشفى الرمادي التعليمي", "cat": "حرجة (P1)", "w": 10},
+        {"name": "معمل سمنت كبيسة", "cat": "صناعي ثقيل (P1)", "w": 9},
+        {"name": "جامعة الأنبار - المجمع الرئيسي", "cat": "تعليمي (P2)", "w": 7},
+        {"name": "مول الرمادي الكبير", "cat": "تجاري (P2)", "w": 6},
+        {"name": "محطة مياه الرمادي الكبرى", "cat": "خدمي (P1)", "w": 9},
+        {"name": "ملعب الأنبار الأولمبي", "cat": "بنية تحتية (P3)", "w": 5},
+        {"name": "مصفى الأنبار النفطي", "cat": "صناعي ثقيل (P1)", "w": 9}
+    ]
     
-    if st.button("إرسال البيانات إلى السيرفر"):
-        save_entry(name, current_val)
-        st.success(f"تم إرسال {current_val}A لـ {name} بنجاح!")
-        st.balloons() # تأثير بصري عند الإرسال
+    if st.checkbox("بدء المحاكاة التلقائية (إرسال كل 4 ثوانٍ)"):
+        while True:
+            loc = random.choice(locations)
+            # أحمال عالية متقاربة لمحاكاة الضغط
+            val = random.randint(280, 580)
+            save_entry(loc["name"], val, loc["cat"], loc["w"])
+            st.toast(f"إرسال: {loc['name']} بقيمة {val}A")
+            time.sleep(4)
 
-# --- 2. واجهة المراقب (تحديث تلقائي) ---
+# --- 2. واجهة المراقب (الرسمية والرسومية) ---
 else:
-    st.title("🖥️ مركز المراقبة والتحليل اللحظي")
-    st.caption("جامعة الأنبار - كلية الهندسة | مشروع إدارة الأحمال الذكية")
-
+    st.title("🖥️ نظام مراقبة استقرار الشبكة الذكية")
+    st.caption("جامعة الأنبار - كلية الهندسة | قسم الكهرباء")
+    
     @st.fragment(run_every="2s")
-    def dashboard():
+    def render_dashboard():
         data = load_data()
         if not data:
-            st.warning("بانتظار استقبال أول حزمة بيانات... (اذهب لصفحة الإدخال أولاً)")
+            st.warning("بانتظار استقبال البيانات من الحقل...")
             return
 
         df = pd.DataFrame(data)
 
-        # تطبيق البروتوكول (الفرز)
+        # منطق البروتوكول (Sorting Logic)
         if mode:
-            df_display = df.sort_values(by=["level", "p"], ascending=[False, False])
+            # ترتيب حسب (الأولوية الهندسية * القيمة) لإبراز الأخطر
+            df['Score'] = df['الوزن'] * 100 + df['التيار (A)']
+            df_display = df.sort_values(by="Score", ascending=False)
         else:
+            # ترتيب عشوائي حسب وقت الوصول (Chaos)
             df_display = df.iloc[::-1]
 
-        # --- الرسم البياني ---
-        st.subheader("📊 تحليل الرسم البياني للأحمال")
-        chart_df = df.pivot_table(index='الوقت', columns='المنشأة', values='التيار (A)').ffill()
-        st.line_chart(chart_df, height=350)
-        
+        # --- القسم الأول: المؤشرات (Metrics) ---
+        cols = st.columns(4)
+        unique_locs = df.drop_duplicates(subset=['المنشأة'], keep='last').tail(4)
+        for i, (idx, row) in enumerate(unique_locs.iterrows()):
+            cols[i].metric(row['المنشأة'], f"{row['التيار (A)']} A", f"P{row['الوزن']}")
+
+        st.markdown("---")
+
+        # --- القسم الثاني: الرسم البياني (Focus on Visuals) ---
+        st.subheader("📈 تحليل استقرارية الأحمال (Real-time Load Analysis)")
+        # تحضير البيانات للرسم البياني الزمني
+        chart_df = df.pivot_table(index='التوقيت', columns='المنشأة', values='التيار (A)').ffill()
+        st.line_chart(chart_df, height=350, use_container_width=True)
+
         
 
-        # --- جدول البيانات ---
-        st.subheader("📋 سجل استلام الحزم (Data Logging)")
+        # --- القسم الثالث: جدول البيانات (Professional Logging) ---
+        st.subheader("📋 سجل البيانات الفني (Sequential Data Packets)")
         
-        def color_rows(row):
-            if "🔴" in row['الحالة']:
+        def highlight_danger(row):
+            # تمييز المستشفى والمعامل الثقيلة عند تجاوز 400A
+            if row['الوزن'] >= 9 and row['التيار (A)'] >= 400:
                 return ['background-color: #7b0000; color: white; font-weight: bold'] * len(row)
-            elif "🟡" in row['الحالة']:
-                return ['background-color: #6d5c00; color: white'] * len(row)
+            elif row['التيار (A)'] >= 400:
+                return ['background-color: #5c4400; color: white'] * len(row)
             return [''] * len(row)
 
+        # عرض الجدول مع استبعاد أعمدة الترتيب الداخلية
         st.dataframe(
-            df_display.drop(columns=['level', 'p'], errors='ignore').style.apply(color_rows, axis=1),
+            df_display.drop(columns=['الوزن', 'Score'], errors='ignore').style.apply(highlight_danger, axis=1),
             use_container_width=True,
-            height=400
+            height=450
         )
 
-    dashboard()
+    render_dashboard()
     
