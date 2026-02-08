@@ -6,12 +6,12 @@ import time
 import random
 from datetime import datetime
 
-# إعدادات الصفحة
-st.set_page_config(page_title="نظام طاقة الأنبار الذكي", layout="wide")
+# إعدادات الصفحة الرسمية
+st.set_page_config(page_title="نظام مراقبة الطاقة الذكي - الأنبار", layout="wide")
 
-DB_FILE = "anbar_hybrid_grid.json"
+DB_FILE = "anbar_final_grid.json"
 
-# --- إعدادات المنشآت والمتوسطات ---
+# --- إعدادات المنشآت والمتوسطات المرجعية ---
 LOCATIONS_CONFIG = {
     "مستشفى الرمادي التعليمي": {"avg": 400, "priority": 10},
     "معمل زجاج الرمادي": {"avg": 500, "priority": 10},
@@ -44,96 +44,99 @@ def save_entry(name, current):
         "التيار (A)": current,
         "المتوسط": avg,
         "الحالة": status,
-        "الوقت": datetime.now().strftime("%H:%M:%S.%f")[:-3],
+        "الوقت": datetime.now().strftime("%H:%M:%S.%f")[:-1], # توقيت دقيق
         "level": level,
         "p": LOCATIONS_CONFIG[name]["priority"]
     }
     history.append(entry)
+    # الحفاظ على آخر 50 سجل ليكون الرسم البياني نظيفاً وغير مزدحم
     with open(DB_FILE, "w") as f:
-        json.dump(history[-80:], f)
+        json.dump(history[-50:], f)
 
-# --- القائمة الجانبية ---
-st.sidebar.title("🛂 لوحة التحكم المركزي")
-st.sidebar.markdown("---")
-input_mode = st.sidebar.radio("طريقة إدخال البيانات:", ["يدوي (تحريك الشريط)", "تلقائي (محاكاة)"])
-protocol_mode = st.sidebar.toggle("تفعيل بروتوكول الأولوية", value=True)
+# --- واجهة المستخدم الرئيسية ---
+st.title("🖥️ مركز التحكم والسيطرة الوطني - الأنبار")
+st.markdown("---")
 
-if st.sidebar.button("مسح السجلات"):
-    if os.path.exists(DB_FILE): os.remove(DB_FILE)
-    st.rerun()
+# تقسيم الشاشة إلى قائمة جانبية ومساحة عرض
+with st.sidebar:
+    st.header("🛂 إعدادات النظام")
+    input_mode = st.radio("وضع الإدخال:", ["تلقائي (بث فائق السرعة)", "يدوي (تحكم لحظي)"])
+    protocol_mode = st.toggle("تفعيل الفرز الذكي (Priority)", value=True)
+    st.markdown("---")
+    if st.button("🗑️ مسح السجلات"):
+        if os.path.exists(DB_FILE): os.remove(DB_FILE)
+        st.rerun()
 
-# تقسيم الصفحة إلى "إدخال" و "مراقبة"
-col_input, col_monitor = st.columns([1, 2])
+# إنشاء أعمدة لعرض البيانات (إدخال ومراقبة)
+col_input, col_monitor = st.columns([1, 2], gap="large")
 
-# --- 1. قسم إدخال البيانات ---
+# --- 1. قسم الإدخال ---
 with col_input:
-    st.header("📥 وحدة الإدخال")
+    st.subheader("📥 بوابة البيانات")
     
-    if input_mode == "يدوي (تحريك الشريط)":
-        st.write("حرك المنزلق لإرسال البيانات لحظياً:")
-        for loc_name in LOCATIONS_CONFIG.keys():
-            # استخدام Session State لتتبع القيمة السابقة ومنع تكرار الإرسال غير الضروري
-            current_val = st.slider(
-                f"{loc_name} (Amps):", 
-                0, 800, 
-                value=LOCATIONS_CONFIG[loc_name]["avg"],
-                key=f"slider_{loc_name}"
-            )
-            # الإرسال بمجرد تغيير القيمة (Streamlit يعيد التشغيل تلقائياً عند تغيير السلايدر)
-            if st.session_state.get(f"prev_{loc_name}") != current_val:
-                save_entry(loc_name, current_val)
-                st.session_state[f"prev_{loc_name}"] = current_val
-
-    else:
-        st.write("البث التلقائي مفعل...")
-        run_auto = st.checkbox("ابدأ المحاكاة (0.5 ثانية)")
+    if input_mode == "تلقائي (بث فائق السرعة)":
+        run_auto = st.checkbox("بدء المحاكاة (0.5 ثانية لكل عنصر)")
         if run_auto:
             placeholder = st.empty()
+            # مصفوفة للمواقع لضمان التحديث الدوري لكل واحد
+            locations = list(LOCATIONS_CONFIG.keys())
+            idx = 0
             while True:
-                name = random.choice(list(LOCATIONS_CONFIG.keys()))
+                name = locations[idx % len(locations)]
                 avg = LOCATIONS_CONFIG[name]["avg"]
-                val = random.randint(int(avg*0.7), int(avg*1.5))
+                val = random.randint(int(avg*0.8), int(avg*1.4))
                 save_entry(name, val)
+                
                 with placeholder.container():
-                    st.success(f"📡 يبث الآن: {name} -> {val}A")
-                time.sleep(0.5)
+                    st.success(f"📡 بث حي: {name}")
+                    st.metric(label="الحمل الحالي", value=f"{val} A", delta=f"{val-avg} vs Avg")
+                
+                idx += 1
+                time.sleep(0.5) # التحديث كل نصف ثانية كما طلبت
                 st.rerun()
+    else:
+        st.write("حرك المنزلق للإرسال الفوري:")
+        for loc_name in LOCATIONS_CONFIG.keys():
+            val = st.slider(f"{loc_name}:", 0, 800, value=LOCATIONS_CONFIG[loc_name]["avg"], key=loc_name)
+            if st.session_state.get(f"v_{loc_name}") != val:
+                save_entry(loc_name, val)
+                st.session_state[f"v_{loc_name}"] = val
 
-# --- 2. قسم المراقبة (Dashboard) ---
+# --- 2. قسم المراقبة والتحليل ---
 with col_monitor:
-    st.header("🖥️ شاشة المراقبة والتحليل")
+    st.subheader("📊 لوحة التحليل اللحظي")
     
     @st.fragment(run_every="1s")
     def update_dashboard():
         data = load_data()
         if not data:
-            st.info("بانتظار وصول البيانات...")
+            st.info("بانتظار استقبال الإشارات من الحقل...")
             return
 
         df = pd.DataFrame(data)
 
-        # ترتيب البيانات (البروتوكول)
+        # ترتيب البيانات حسب البروتوكول
         if protocol_mode:
             df_display = df.sort_values(by=["level", "p"], ascending=[False, False])
         else:
             df_display = df.iloc[::-1]
 
-        # الرسم البياني
-        st.subheader("📊 تحليل الرسم البياني")
+        # الرسم البياني (تم تحسينه ليكون أكثر وضوحاً)
         chart_df = df.pivot_table(index='الوقت', columns='المنشأة', values='التيار (A)').ffill()
         st.line_chart(chart_df, height=300)
 
-        # جدول البيانات
-        st.subheader("📋 سجل البيانات الفني")
-        def style_rows(row):
-            if "🔴" in row['الحالة']: return ['background-color: #800000; color: white'] * len(row)
-            if "🟡" in row['الحالة']: return ['background-color: #856404; color: white'] * len(row)
+        # جدول البيانات الرسمي بتنسيق أنيق
+        st.markdown("##### 📋 سجل تدفق البيانات (Data Packets Log)")
+        
+        def highlight_status(row):
+            if "🔴" in row['الحالة']: return ['background-color: #7b0000; color: white'] * len(row)
+            if "🟡" in row['الحالة']: return ['background-color: #6d5c00; color: white'] * len(row)
             return [''] * len(row)
 
         st.dataframe(
-            df_display.drop(columns=['level', 'p'], errors='ignore').style.apply(style_rows, axis=1),
+            df_display.drop(columns=['level', 'p'], errors='ignore').style.apply(highlight_status, axis=1),
             use_container_width=True,
-            height=400
+            height=350
         )
 
     update_dashboard()
