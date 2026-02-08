@@ -1,17 +1,13 @@
 import streamlit as st
 import pandas as pd
-import json
-import os
-import time
 import random
+import time
 from datetime import datetime
 
 # إعدادات الصفحة الرسمية
-st.set_page_config(page_title="نظام مراقبة الطاقة الذكي - الأنبار", layout="wide")
+st.set_page_config(page_title="نظام طاقة الأنبار - محاكاة البروتوكول", layout="wide")
 
-DB_FILE = "anbar_auto_grid.json"
-
-# --- إعدادات المنشآت والمتوسطات المرجعية ---
+# --- 1. إعدادات المنشآت والبيانات المرجعية ---
 LOCATIONS_CONFIG = {
     "مستشفى الرمادي التعليمي": {"avg": 400, "priority": 10},
     "معمل زجاج الرمادي": {"avg": 500, "priority": 10},
@@ -19,121 +15,111 @@ LOCATIONS_CONFIG = {
     "حي التأميم (المغذي الرئيسي)": {"avg": 300, "priority": 7}
 }
 
-def load_data():
-    if not os.path.exists(DB_FILE): return []
-    try:
-        with open(DB_FILE, "r") as f:
-            content = f.read()
-            return json.loads(content) if content else []
-    except: return []
+# تهيئة ذاكرة البيانات (Session State) لضمان سلاسة التحديث
+if 'data_history' not in st.session_state:
+    st.session_state.data_history = []
 
-def save_entry(name, current):
-    history = load_data()
+def add_entry(name, current):
     avg = LOCATIONS_CONFIG[name]["avg"]
-    
     if current < avg:
-        status, level = "🟢 مستقر (Normal)", 1
+        status, level = "🟢 مستقر", 1
     elif avg <= current < (avg * 1.2):
-        status, level = "🟡 تنبيه (Warning)", 2
+        status, level = "🟡 تنبيه (تجاوز المتوسط)", 2
     else:
-        status, level = "🔴 خطر (Critical)", 3
+        status, level = "🔴 خطر (حمل زائد)", 3
 
     entry = {
         "المنشأة": name,
         "التيار (A)": current,
-        "المتوسط": avg,
         "الحالة": status,
-        "الوقت": datetime.now().strftime("%H:%M:%S.%f")[:-1],
+        "الوقت": datetime.now().strftime("%H:%M:%S.%f")[:-3],
         "level": level,
         "p": LOCATIONS_CONFIG[name]["priority"]
     }
-    history.append(entry)
-    with open(DB_FILE, "w") as f:
-        json.dump(history[-50:], f)
+    st.session_state.data_history.append(entry)
+    # الحفاظ على آخر 30 سجل لضمان سرعة المتصفح
+    if len(st.session_state.data_history) > 30:
+        st.session_state.data_history.pop(0)
 
-# --- واجهة المستخدم ---
-st.title("🖥️ مركز التحكم والسيطرة الوطني - الأنبار")
-st.markdown("---")
-
+# --- 2. واجهة التحكم (Sidebar) ---
 with st.sidebar:
-    st.header("🛂 إعدادات النظام")
-    input_mode = st.radio("وضع الإدخال:", ["تلقائي (بث فائق السرعة)", "يدوي (تحكم لحظي)"])
-    protocol_mode = st.sidebar.toggle("تفعيل الفرز الذكي (Priority)", value=True)
+    st.title("⚙️ إعدادات النظام")
+    mode = st.radio("اختر وضعية الشبكة:", ["بدون بروتوكول (خطر الانهيار)", "بالبروتوكول الذكي (الأولويات)"])
+    input_type = st.radio("طريقة البث:", ["تلقائي (فائق السرعة)", "يدوي"])
     st.markdown("---")
-    if st.button("🗑️ مسح السجلات"):
-        if os.path.exists(DB_FILE): os.remove(DB_FILE)
+    if st.button("🗑️ مسح سجل البيانات"):
+        st.session_state.data_history = []
         st.rerun()
 
-col_input, col_monitor = st.columns([1, 2], gap="large")
+# --- 3. تصميم الواجهة الرئيسية ---
+st.title("🖥️ مركز التحكم في أحمال مدينة الرمادي")
+st.markdown(f"الحالة التشغيلية الآن: **{mode}**")
 
-# --- 1. قسم الإدخال (التشغيل التلقائي) ---
-with col_input:
-    st.subheader("📥 بوابة البيانات")
-    
-    if input_mode == "تلقائي (بث فائق السرعة)":
-        st.success("✅ البث التلقائي نشط الآن (0.5 ثانية)")
-        
-        # مصفوفة للمواقع للتحديث الدوري
-        locations = list(LOCATIONS_CONFIG.keys())
-        # استخدام session_state للحفاظ على العداد عند إعادة التشغيل
-        if 'idx' not in st.session_state:
-            st.session_state.idx = 0
-            
-        name = locations[st.session_state.idx % len(locations)]
-        avg = LOCATIONS_CONFIG[name]["avg"]
-        val = random.randint(int(avg*0.8), int(avg*1.4))
-        
-        save_entry(name, val)
-        st.session_state.idx += 1
-        
-        # عرض المقياس الحالي
-        st.metric(label=f"بث حي: {name}", value=f"{val} A", delta=f"{val-avg} vs Avg")
-        
-        # التحديث التلقائي الفوري
-        time.sleep(0.5)
-        st.rerun()
+# حاوية ثابتة للرسم البياني والجدول لمنع الارتجاج في الشاشة
+dashboard_placeholder = st.empty()
 
+# --- 4. منطق التشغيل (تلقائي / يدوي) ---
+if input_type == "تلقائي (فائق السرعة)":
+    # اختيار عشوائي سريع
+    loc_names = list(LOCATIONS_CONFIG.keys())
+    name = random.choice(loc_names)
+    avg = LOCATIONS_CONFIG[name]["avg"]
+    # توليد قيم عالية لمحاكاة الضغط
+    val = random.randint(int(avg*0.7), int(avg*1.5))
+    add_entry(name, val)
+else:
+    # الوضع اليدوي (sliders)
+    st.info("حرك المنزلقات أدناه لتوليد البيانات:")
+    cols = st.columns(4)
+    for i, loc_name in enumerate(LOCATIONS_CONFIG.keys()):
+        val = cols[i].slider(f"{loc_name.split()[0]}", 0, 800, value=LOCATIONS_CONFIG[loc_name]["avg"], key=loc_name)
+        if st.session_state.get(f"prev_{loc_name}") != val:
+            add_entry(loc_name, val)
+            st.session_state[f"prev_{loc_name}"] = val
+
+# --- 5. منطق العرض (البروتوكول vs الانهيار) ---
+with dashboard_placeholder.container():
+    if not st.session_state.data_history:
+        st.info("بانتظار وصول البيانات...")
     else:
-        st.write("حرك المنزلق للإرسال الفوري:")
-        for loc_name in LOCATIONS_CONFIG.keys():
-            val = st.slider(f"{loc_name}:", 0, 800, value=LOCATIONS_CONFIG[loc_name]["avg"], key=loc_name)
-            if st.session_state.get(f"v_{loc_name}") != val:
-                save_entry(loc_name, val)
-                st.session_state[f"v_{loc_name}"] = val
+        df = pd.DataFrame(st.session_state.data_history)
 
-# --- 2. قسم المراقبة والتحليل ---
-with col_monitor:
-    st.subheader("📊 لوحة التحليل اللحظي")
-    
-    @st.fragment(run_every="1s")
-    def update_dashboard():
-        data = load_data()
-        if not data:
-            st.info("بانتظار البيانات...")
-            return
+        # سيناريو 1: بدون بروتوكول (Chaos)
+        if mode == "بدون بروتوكول (خطر الانهيار)":
+            st.error("🚨 تحذير: البيانات تتدفق بدون تنظيم (High Congestion)")
+            # البيانات تظهر كما وصلت تماماً (فوضى)
+            df_display = df.iloc[::-1] # الأحدث فوق لكن بدون ترتيب أهمية
+            
+            # محاكاة "الانهيار" إذا كانت هناك أكثر من 3 حالات خطر
+            danger_count = len(df[df['level'] == 3])
+            if danger_count > 4:
+                st.markdown("<h2 style='color:red; text-align:center;'>⛔ NETWORK COLLAPSE ⛔</h2>", unsafe_allow_html=True)
+                st.warning("النظام غير قادر على فرز الأحمال الحرجة - خطر انقطاع عام!")
 
-        df = pd.DataFrame(data)
-
-        if protocol_mode:
-            df_display = df.sort_values(by=["level", "p"], ascending=[False, False])
+        # سيناريو 2: بالبروتوكول الذكي (Priority)
         else:
-            df_display = df.iloc[::-1]
+            st.success("✅ البروتوكول فعال: يتم فرز الأحمال الحرجة وتأمينها")
+            # الفرز حسب (الحالة الخطرة أولاً) ثم (أولوية المنشأة)
+            df_display = df.sort_values(by=["level", "p"], ascending=[False, False])
 
+        # عرض الرسم البياني (سلس ومتسلسل)
         chart_df = df.pivot_table(index='الوقت', columns='المنشأة', values='التيار (A)').ffill()
         st.line_chart(chart_df, height=300)
 
-        st.markdown("##### 📋 سجل تدفق البيانات")
-        
-        def highlight_status(row):
-            if "🔴" in row['الحالة']: return ['background-color: #7b0000; color: white'] * len(row)
-            if "🟡" in row['الحالة']: return ['background-color: #6d5c00; color: white'] * len(row)
+        # عرض الجدول بتنسيق احترافي
+        def style_rows(row):
+            if row['level'] == 3: return ['background-color: #800000; color: white'] * len(row)
+            if row['level'] == 2: return ['background-color: #705d00; color: white'] * len(row)
             return [''] * len(row)
 
         st.dataframe(
-            df_display.drop(columns=['level', 'p'], errors='ignore').style.apply(highlight_status, axis=1),
+            df_display.drop(columns=['level', 'p'], errors='ignore').style.apply(style_rows, axis=1),
             use_container_width=True,
-            height=350
+            height=400
         )
 
-    update_dashboard()
+# تحديث تلقائي كل 0.5 ثانية في الوضع التلقائي فقط
+if input_type == "تلقائي (فائق السرعة)":
+    time.sleep(0.5)
+    st.rerun()
     
