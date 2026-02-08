@@ -9,18 +9,18 @@ from datetime import datetime
 # 1. إعدادات الصفحة
 st.set_page_config(page_title="نظام طاقة الأنبار الموحد", layout="wide")
 
-DB_FILE = "anbar_grid_db.json"
+DB_FILE = "anbar_final_db.json"
 
 # 2. إعدادات محطات الرمادي
 STATIONS = {
-    "مستشفى الرمادي التعليمي": {"max": 1000, "priority": 1},
-    "معمل زجاج الرمادي": {"max": 1200, "priority": 2},
-    "محطة مياه الورار": {"max": 900, "priority": 3},
-    "جامعة الأنبار": {"max": 700, "priority": 4},
-    "حي التأميم (سكني)": {"max": 500, "priority": 5}
+    "مستشفى الرمادي التعليمي": {"max": 1000, "priority": 1},   # أهم منشأة
+    "معمل زجاج الرمادي": {"max": 1200, "priority": 2},         # صناعي
+    "محطة مياه الورار": {"max": 900, "priority": 3},           # بنية تحتية
+    "جامعة الأنبار": {"max": 700, "priority": 4},              # تعليمي
+    "حي التأميم (سكني)": {"max": 500, "priority": 5}           # سكني
 }
 
-# --- دوال التعامل مع الملفات ---
+# --- دوال التعامل مع الملفات (قراءة/كتابة آمنة) ---
 def load_data():
     if not os.path.exists(DB_FILE): return []
     try:
@@ -34,15 +34,16 @@ def save_data(new_entries):
     try:
         history = load_data()
         history.extend(new_entries)
-        # نحتفظ بآخر 100 سجل فقط
+        # نحتفظ بآخر 200 سجل ليكون الأرشيف كافياً
         with open(DB_FILE, "w", encoding='utf-8') as f:
-            json.dump(history[-100:], f, ensure_ascii=False, indent=4)
+            json.dump(history[-200:], f, ensure_ascii=False, indent=4)
     except:
         pass
 
 def create_reading(name, current, batch_id):
     limit = STATIONS[name]["max"]
     
+    # تحديد الحالة
     if current < (limit * 0.8):
         status, level = "🟢 مستقر", 1
     elif (limit * 0.8) <= current < (limit * 0.95):
@@ -75,41 +76,47 @@ if st.sidebar.button("🗑️ تصفير قاعدة البيانات"):
 # الصفحة الأولى: غرفة التحكم
 # ==========================================
 if page == "🕹️ غرفة التحكم (إرسال)":
-    st.title("🕹️ وحدة إرسال الإشارات")
+    st.title("🕹️ وحدة إرسال الإشارات الميدانية")
     
-    mode = st.selectbox("طريقة الإرسال:", ["بث تلقائي (مستمر)", "إرسال يدوي"])
+    mode = st.selectbox("نمط العمل:", ["بث تلقائي (محاكاة)", "تحكم يدوي"])
     
-    if mode == "بث تلقائي (مستمر)":
-        st.info("يتم إرسال البيانات للمحطات الـ 5 كل ثانية.")
+    # 1. الوضع التلقائي
+    if mode == "بث تلقائي (محاكاة)":
+        st.info("سيقوم النظام بإرسال بيانات للمحطات الـ 5 بشكل مستمر.")
         run_auto = st.checkbox("تشغيل البث التلقائي")
         
         if run_auto:
-            st.success("📡 البث نشط...")
+            st.success("📡 البث نشط... البيانات تتدفق.")
             placeholder = st.empty()
+            
             while run_auto:
                 batch_id = time.time()
                 batch = []
                 for name in STATIONS:
+                    # توليد قيم عشوائية
                     val = random.randint(int(STATIONS[name]["max"]*0.6), int(STATIONS[name]["max"]*1.1))
                     batch.append(create_reading(name, val, batch_id))
                 
                 save_data(batch)
                 with placeholder.container():
                     st.write(f"✅ تم الإرسال: {datetime.now().strftime('%H:%M:%S')}")
-                time.sleep(1)
+                
+                time.sleep(1) # إرسال كل ثانية
     
+    # 2. الوضع اليدوي
     else:
-        st.write("التحكم اليدوي:")
+        st.write("التحكم بقيم التيار لكل محطة:")
         batch_id = time.time()
+        
         for name in STATIONS:
             col1, col2 = st.columns([3, 1])
             with col1:
-                val = st.slider(f"{name}", 0, int(STATIONS[name]["max"]*1.25), value=int(STATIONS[name]["max"]*0.5), key=name)
+                val = st.slider(f"{name}", 0, int(STATIONS[name]["max"]*1.3), value=int(STATIONS[name]["max"]*0.7), key=name)
             with col2:
                 if st.button(f"إرسال {name}"):
                     reading = create_reading(name, val, batch_id)
                     save_data([reading])
-                    st.toast(f"تم إرسال {name}")
+                    st.toast(f"تم إرسال قراءة {name}")
 
 # ==========================================
 # الصفحة الثانية: شاشة المراقبة
@@ -125,27 +132,33 @@ else:
         
         with placeholder.container():
             if not data:
-                st.warning("⚠️ لا توجد بيانات. شغل البث من غرفة التحكم.")
+                st.warning("⚠️ بانتظار البيانات... شغل البث من غرفة التحكم.")
             else:
                 df = pd.DataFrame(data)
                 
-                # التأكد من وجود الأعمدة المطلوبة لتجنب KeyError
+                # التأكد من صحة الأعمدة
                 required_cols = ["batch_id", "level", "priority", "timestamp"]
                 if all(col in df.columns for col in required_cols):
+                    
+                    # === الفروقات في العرض ===
                     if protocol_active:
+                        # مع البروتوكول: ترتيب ذكي (الأحدث + الخطر + الأهمية)
                         df_display = df.sort_values(by=["batch_id", "level", "priority"], ascending=[False, False, True])
-                        st.success("✅ البروتوكول فعال.")
+                        st.success("✅ البروتوكول فعال: يتم تقديم الحالات الحرجة والمواقع السيادية.")
                     else:
+                        # بدون بروتوكول: ترتيب زمني طبيعي (Raw Data)
+                        # لا يوجد انهيار، لا يوجد حذف، فقط عرض كما وصلت البيانات
                         df_display = df.sort_values(by="timestamp", ascending=False)
-                        st.error("⚠️ النظام يعمل بدون حماية.")
+                        st.info("ℹ️ عرض البيانات الخام (Raw Log): الترتيب حسب وقت الوصول.")
 
-                    # الرسم البياني
+                    # 1. الرسم البياني
                     st.subheader("📊 مخطط الأحمال")
                     chart_data = df.tail(50).pivot_table(index='الوقت', columns='المنشأة', values='التيار (A)').ffill()
                     st.line_chart(chart_data, height=250)
 
-                    # الجدول
+                    # 2. الجدول
                     st.subheader("📋 سجل البيانات")
+                    
                     def highlight_danger(row):
                         if row['level'] == 3: return ['background-color: #8b0000; color: white; font-weight: bold'] * len(row)
                         if row['level'] == 2: return ['background-color: #705d00; color: white'] * len(row)
@@ -155,10 +168,11 @@ else:
                     st.dataframe(
                         df_display[cols + ['level']].style.apply(highlight_danger, axis=1),
                         use_container_width=True,
-                        height=500,
+                        height=600,
                         column_config={"level": None}
                     )
                 else:
-                    st.error("⚠️ ملف البيانات قديم. يرجى الضغط على زر 'تصفير قاعدة البيانات' من القائمة الجانبية.")
+                    st.error("⚠️ البيانات قديمة. اضغط زر 'تصفير قاعدة البيانات' من القائمة.")
         
         time.sleep(1)
+                                                                                        
