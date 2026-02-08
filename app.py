@@ -7,9 +7,9 @@ import random
 from datetime import datetime
 
 # --- 1. إعدادات الصفحة ---
-st.set_page_config(page_title="نظام طاقة الأنبار - الواجهة البيضاء", layout="wide")
+st.set_page_config(page_title="نظام طاقة الأنبار - واجهة المراقبة الاحترافية", layout="wide")
 
-DB_FILE = "anbar_pure_white_v1.json"
+DB_FILE = "anbar_black_text_v1.json"
 
 STATIONS_SPECS = {
     "مستشفى الرمادي التعليمي": 1000,
@@ -33,7 +33,6 @@ def load_data():
         return {"entries": [], "load_val": 0.0, "collapsed": False}
 
 def save_data(data):
-    # حماية المؤشر من الأخطاء البرمجية
     data["load_val"] = float(max(0.0, min(data["load_val"], 100.0)))
     with open(DB_FILE, "w", encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
@@ -47,7 +46,7 @@ def apply_system_logic(new_readings, protocol_on):
         data["entries"] = data["entries"][-40:]
     
     if protocol_on:
-        # التراوح حول 25%
+        # التوازن عند 25%
         target = 25.0
         if data["load_val"] > (target + 2):
             data["load_val"] -= 8.0
@@ -83,12 +82,12 @@ if st.sidebar.button("♻️ تصفير النظام"):
 if page == "🕹️ غرفة التحكم":
     st.title("🕹️ وحدة التحكم والإرسال")
     
-    # زر البروتوكول هنا
+    # تفعيل البروتوكول من هنا
     st.session_state.protocol_active = st.toggle("🛡️ تفعيل بروتوكول الحماية", value=st.session_state.protocol_active)
     
     state = load_data()
     if state["collapsed"]:
-        st.error("🚨 النظام منهار.")
+        st.error("🚨 النظام في حالة انهيار بسبب الضغط.")
     else:
         apply_system_logic([], st.session_state.protocol_active)
         col1, col2 = st.columns(2)
@@ -98,11 +97,12 @@ if page == "🕹️ غرفة التحكم":
                 val = st.slider(f"{name}", 0, 1500, value=int(m_val*0.6), key=f"s_{name}")
                 if st.button(f"بث {name}", key=f"b_{name}"):
                     pct = (val / m_val) * 100
+                    # تعديل عتبة الخطر لتكون 95% فأكثر كما طلبت
                     stt = "🔴 خطر" if pct >= 95 else "🟡 تنبيه" if pct >= 85 else "🟢 مستقر"
+                    lvl = 3 if pct >= 95 else 2 if pct >= 85 else 1
                     apply_system_logic([{
                         "المحطة": name, "التيار (A)": val, "الحالة": stt, 
-                        "level": 3 if pct >= 95 else 2 if pct >= 85 else 1,
-                        "timestamp": time.time(), "الوقت": datetime.now().strftime("%H:%M:%S")
+                        "level": lvl, "timestamp": time.time(), "الوقت": datetime.now().strftime("%H:%M:%S")
                     }], st.session_state.protocol_active)
                     st.toast(f"تم إرسال {name}")
 
@@ -117,13 +117,14 @@ if page == "🕹️ غرفة التحكم":
                 batch = []
                 for n in selected:
                     s_max = STATIONS_SPECS[n]
-                    v = random.randint(int(s_max*0.4), int(s_max*1.3))
+                    # جعل القيمة نادراً ما تصل لـ 95% لتقليل ظهور اللون الأحمر
+                    v = random.randint(int(s_max*0.4), int(s_max*1.02))
                     pct = (v / s_max) * 100
                     stt = "🔴 خطر" if pct >= 95 else "🟡 تنبيه" if pct >= 85 else "🟢 مستقر"
                     batch.append({"المحطة": n, "التيار (A)": v, "الحالة": stt, "level": 3 if pct >= 95 else 2 if pct >= 85 else 1, "timestamp": b_time, "الوقت": b_clock})
                 
                 apply_system_logic(batch, st.session_state.protocol_active)
-                auto_place.info(f"📡 الضغط: {load_data()['load_val']:.1f}%")
+                auto_place.info(f"📡 مراقبة الضغط: {load_data()['load_val']:.1f}%")
                 time.sleep(1)
 
 # ==========================================
@@ -133,16 +134,17 @@ else:
     st.title("🖥️ شاشة المراقبة")
     mon_placeholder = st.empty()
     
-    # CSS لجعل كل شيء أبيض ناصع
+    # CSS لضمان سواد الخط وبياض الجدول
     st.markdown("""
         <style>
-        .stApp { background-color: #f8f9fa; }
-        .stDataFrame { background-color: white !important; border: 1px solid #dee2e6; border-radius: 10px; }
+        .stDataFrame { background-color: white !important; border: 1px solid #dee2e6; }
         .collapse-msg {
-            background-color: white; color: #dc3545; padding: 20px;
+            background-color: white; color: #dc3545; padding: 15px;
             border: 2px solid #dc3545; border-radius: 8px; text-align: center;
-            font-weight: bold; width: 350px; margin: 50px auto;
+            font-weight: bold; width: 320px; margin: 40px auto;
         }
+        /* تلوين نصوص الجدول وضمان اللون الأسود */
+        div[data-testid="stDataFrame"] td { color: black !important; font-weight: 500; }
         </style>
     """, unsafe_allow_html=True)
 
@@ -160,20 +162,21 @@ else:
             
             if state["entries"]:
                 df = pd.DataFrame(state["entries"])
+                # الفرز الرباعي: الأحدث أولاً، ثم الأخطر داخل المجموعة
                 df_display = df.sort_values(by=['timestamp', 'level'], ascending=[False, False])
 
-                # دالة التلوين: الخلفية بيضاء، واللون للنص فقط
-                def style_white_table(row):
+                # دالة التنسيق: خلفية بيضاء وخط أسود، مع تمييز الحالة فقط بلون خلفية خفيف جداً
+                def style_table(row):
                     lvl = row.get('level', 1)
-                    if lvl == 3: # أحمر
-                        return ['background-color: white; color: #ff0000; font-weight: bold; border-bottom: 1px solid #eee'] * len(row)
-                    if lvl == 2: # أصفر/برتقالي
-                        return ['background-color: white; color: #ffcc00; font-weight: bold; border-bottom: 1px solid #eee'] * len(row)
-                    return ['background-color: white; color: #00cc00; font-weight: bold; border-bottom: 1px solid #eee'] * len(row) # أخضر
+                    if lvl == 3: # خطر (95%+)
+                        return ['background-color: #ffcccc; color: black; font-weight: bold'] * len(row)
+                    if lvl == 2: # تنبيه (85%-95%)
+                        return ['background-color: #fff4cc; color: black'] * len(row)
+                    return ['background-color: #d4edda; color: black'] * len(row) # مستقر
 
-                st.subheader("📋 حالة المحطات اللحظية")
+                st.subheader("📋 حالة المحطات")
                 st.dataframe(
-                    df_display[["المحطة", "التيار (A)", "الحالة", "الوقت"]].head(20).style.apply(style_white_table, axis=1),
+                    df_display[["المحطة", "التيار (A)", "الحالة", "الوقت"]].head(20).style.apply(style_table, axis=1),
                     use_container_width=True, hide_index=True
                 )
                 
@@ -181,6 +184,6 @@ else:
                 chart_df = df.pivot_table(index='الوقت', columns='المحطة', values='التيار (A)').ffill()
                 st.line_chart(chart_df, height=200)
             else:
-                st.info("بانتظار البيانات...")
+                st.info("بانتظار البيانات القادمة...")
         time.sleep(1)
-                    
+            
