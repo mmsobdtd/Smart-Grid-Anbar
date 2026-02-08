@@ -6,137 +6,176 @@ import time
 import random
 from datetime import datetime
 
-# إعداد الصفحة
-st.set_page_config(page_title="نظام طاقة الأنبار", layout="wide")
+# 1. إعدادات الصفحة الأساسية
+st.set_page_config(page_title="نظام طاقة الأنبار - محاكاة الانهيار", layout="wide")
 
-# ملفات الحالة (يجب أن تكون منفصلة لضمان السرعة)
-STATE_FILE = "system_state.json"
+DB_FILE = "anbar_grid_data.json"
 
-# إعدادات المحطات
+# 2. محطات الرمادي الواقعية وقدراتها
 STATIONS = {
-    "مستشفى الرمادي": {"priority": 1},
-    "معمل الزجاج": {"priority": 2},
-    "محطة الورار": {"priority": 3},
-    "جامعة الأنبار": {"priority": 4},
-    "حي التأميم": {"priority": 5}
+    "مستشفى الرمادي التعليمي": {"max": 1000, "priority": 1},
+    "معمل زجاج الرمادي": {"max": 1200, "priority": 2},
+    "محطة مياه الورار": {"max": 900, "priority": 3},
+    "جامعة الأنبار": {"max": 700, "priority": 4},
+    "حي التأميم (سكني)": {"max": 500, "priority": 5}
 }
 
-# --- دوال الحالة ---
-def get_state():
-    if not os.path.exists(STATE_FILE):
-        return {"load": 0, "crashed": False, "streaming": False}
+# --- دوال الملفات (النظام القديم) ---
+def load_data():
+    if not os.path.exists(DB_FILE): 
+        return {"entries": [], "collapsed": False}
     try:
-        with open(STATE_FILE, "r") as f:
+        with open(DB_FILE, "r", encoding='utf-8') as f:
             return json.load(f)
     except:
-        return {"load": 0, "crashed": False, "streaming": False}
+        return {"entries": [], "collapsed": False}
 
-def save_state(state):
+def save_data(new_entries, force_collapse=False):
     try:
-        with open(STATE_FILE, "w") as f:
-            json.dump(state, f)
+        data = load_data()
+        if data.get("collapsed", False): return # لا تسجل إذا النظام منهار
+        
+        if force_collapse:
+            data["collapsed"] = True
+        else:
+            data["entries"].extend(new_entries)
+            # نحتفظ بآخر 100 سجل فقط
+            data["entries"] = data["entries"][-100:]
+            
+        with open(DB_FILE, "w", encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
     except:
         pass
 
+def create_log(name, current, batch_id):
+    limit = STATIONS[name]["max"]
+    if current < (limit * 0.8): status, level = "🟢 مستقر", 1
+    elif (limit * 0.8) <= current < (limit * 0.95): status, level = "🟡 تنبيه", 2
+    else: status, level = "🔴 خطر", 3
+    return {
+        "المنشأة": name, "التيار (A)": current, "الحالة": status,
+        "الوقت": datetime.now().strftime("%H:%M:%S"),
+        "timestamp": time.time(), "level": level, 
+        "priority": STATIONS[name]["priority"], "batch_id": batch_id
+    }
+
 # --- القائمة الجانبية ---
-st.sidebar.title("⚡ تحكم النظام")
-page = st.sidebar.radio("الصفحات:", ["لوحة التشغيل", "شاشة المراقبة"])
+st.sidebar.title("⚡ مركز سيطرة الرمادي")
+page = st.sidebar.radio("القوائم:", ["🕹️ غرفة التحكم", "🖥️ شاشة المراقبة"])
 st.sidebar.markdown("---")
+# المفتاح الذهبي: إذا عطلت هذا، النظام سينهار عند الضغط
+protocol_on = st.sidebar.toggle("تفعيل بروتوكول الحماية", value=True)
 
-# زر البروتوكول (هو المفتاح)
-protocol_on = st.sidebar.toggle("تفعيل الحماية (Protocol)", value=True)
-
-# زر التصفير
-if st.sidebar.button("♻️ تصفير النظام (Reset)"):
-    if os.path.exists(STATE_FILE): os.remove(STATE_FILE)
+if st.sidebar.button("♻️ إعادة تشغيل (Reset)"):
+    if os.path.exists(DB_FILE): os.remove(DB_FILE)
     st.rerun()
 
 # ==========================================
-# الصفحة 1: لوحة التشغيل
+# الصفحة 1: غرفة التحكم (الإرسال)
 # ==========================================
-if page == "لوحة التشغيل":
-    st.title("🕹️ تشغيل البث")
+if page == "🕹️ غرفة التحكم":
+    st.title("🕹️ وحدة إرسال البيانات")
     
-    state = get_state()
-    
-    # زر واحد للتشغيل
-    if st.checkbox("تشغيل النظام", value=state["streaming"]):
-        state["streaming"] = True
-        save_state(state)
-        st.success("✅ النظام يعمل! اذهب لشاشة المراقبة الآن.")
+    state = load_data()
+    if state.get("collapsed"):
+        st.error("❌ الشبكة منهارة تماماً! اضغط Reset من القائمة الجانبية للإصلاح.")
     else:
-        state["streaming"] = False
-        save_state(state)
-        st.info("النظام متوقف.")
+        mode = st.selectbox("نمط العمل:", ["بث تلقائي (5 مواقع)", "يدوي (تحكم بالشريط)"])
+        
+        if mode == "بث تلقائي (5 مواقع)":
+            run = st.checkbox("تشغيل البث المستمر")
+            if run:
+                placeholder = st.empty()
+                while run:
+                    # فحص الانهيار لحظياً
+                    if load_data().get("collapsed"): break
+                    
+                    batch_id = time.time()
+                    batch = []
+                    for n in STATIONS:
+                        val = random.randint(int(STATIONS[n]["max"]*0.7), int(STATIONS[n]["max"]*1.1))
+                        batch.append(create_log(n, val, batch_id))
+                    
+                    save_data(batch)
+                    with placeholder.container():
+                        st.write(f"📡 يتم إرسال نبضات شاملة للشبكة... {datetime.now().strftime('%H:%M:%S')}")
+                    time.sleep(1)
+                    
+        else:
+            batch_id = time.time()
+            for name in STATIONS:
+                val = st.slider(f"{name}", 0, 1500, value=STATIONS[name]["max"]-100, key=name)
+                # الإرسال بمجرد تحريك الشريط
+                if st.session_state.get(f"prev_{name}") != val:
+                    save_data([create_log(name, val, batch_id)])
+                    st.session_state[f"prev_{name}"] = val
 
 # ==========================================
 # الصفحة 2: شاشة المراقبة (حيث يحدث الانهيار)
 # ==========================================
 else:
-    st.title("🖥️ مراقبة الشبكة")
+    st.title("🖥️ مركز مراقبة الشبكة")
     
     placeholder = st.empty()
     
-    # حلقة التحديث
     while True:
-        state = get_state()
+        data_store = load_data()
+        entries = data_store.get("entries", [])
+        is_collapsed = data_store.get("collapsed", False)
         
-        # 1. إذا النظام منهار أصلاً
-        if state["crashed"]:
-            with placeholder.container():
+        with placeholder.container():
+            # 1. منطق الانهيار الحتمي عند ضغط البيانات
+            # إذا كان عدد السجلات > 25 والبروتوكول مطفأ -> النظام ينهار فوراً
+            if not protocol_on and len(entries) > 25 and not is_collapsed:
+                save_data([], force_collapse=True)
+                st.rerun()
+
+            # 2. عرض شاشة الانهيار
+            if is_collapsed:
                 st.markdown("""
-                <div style="background-color:black; color:red; padding:40px; text-align:center;">
-                    <h1 style="font-size:80px;">💀 SYSTEM FAILURE</h1>
-                    <h2>الشبكة انهارت بالكامل</h2>
-                    <p>Load reached 100% due to protocol failure.</p>
+                <div style='background-color:black; padding:50px; border: 10px solid red; text-align:center;'>
+                    <h1 style='color:red; font-size: 70px;'>⚠️ SYSTEM FAILURE ⚠️</h1>
+                    <h2 style='color:white;'>Buffer Overflow: 150% Load</h2>
+                    <p style='color:white; font-size:20px;'>انهارت الشبكة الوطنية في الأنبار بسبب تكدس البيانات وعدم وجود بروتوكول معالجة.</p>
                 </div>
                 """, unsafe_allow_html=True)
                 
-            time.sleep(2)
-            continue # يبقى في الشاشة السوداء
+                break
 
-        # 2. إذا النظام يعمل
-        if state["streaming"]:
-            # === منطق الانهيار الحتمي ===
-            if not protocol_on:
-                # إذا البروتوكول طافي: ارفع الضغط بسرعة جنونية (+25% كل ثانية)
-                state["load"] += 25
+            # 3. العرض الطبيعي
+            if not entries:
+                st.info("بانتظار وصول البيانات من غرفة التحكم...")
             else:
-                # إذا البروتوكول شغال: نزل الضغط
-                state["load"] = 10
-            
-            # فحص الحد الأقصى
-            if state["load"] >= 100:
-                state["load"] = 100
-                state["crashed"] = True
-            
-            save_state(state)
-            
-            # === العرض ===
-            with placeholder.container():
-                # شريط الضغط
-                load_val = state["load"]
-                color = "green" if load_val < 50 else "red"
-                st.markdown(f"### 🔥 ضغط السيرفر: :{color}[{load_val}%]")
-                st.progress(load_val / 100)
-                
-                if protocol_on:
-                    st.success("✅ البروتوكول فعال: الضغط مستقر.")
-                    # جدول وهمي يظهر البيانات مرتبة
-                    data = []
-                    for name in STATIONS:
-                         data.append({"المنشأة": name, "الحالة": "مستقر", "التيار": random.randint(400, 800)})
-                    st.dataframe(pd.DataFrame(data))
-                else:
-                    st.error("⚠️ تحذير: البروتوكول معطل! الانهيار وشيك!")
-                    # جدول وهمي يظهر بيانات عشوائية
-                    data = []
-                    for name in STATIONS:
-                         data.append({"المنشأة": name, "الحالة": "خطر 🔴", "التيار": random.randint(900, 1500)})
-                    st.dataframe(pd.DataFrame(data))
+                # حساب مؤشر الضغط
+                pressure = len(entries) * 4 # كل سجل يمثل 4% ضغط
+                color = "green" if protocol_on else "red"
+                st.markdown(f"### مؤشر ضغط البيانات: :{color}[{pressure}%]")
+                st.progress(min(pressure, 100) / 100)
 
-        else:
-            with placeholder.container():
-                st.info("بانتظار التشغيل من اللوحة...")
+                df = pd.DataFrame(entries)
+                
+                # تطبيق البروتوكول (الترتيب)
+                if protocol_on:
+                    df_display = df.sort_values(by=["batch_id", "level", "priority"], ascending=[False, False, True])
+                    st.success("✅ البروتوكول فعال: يتم تصريف الضغط وحماية السيرفر.")
+                else:
+                    df_display = df.sort_values(by="timestamp", ascending=False)
+                    st.warning("⚠️ تحذير: البروتوكول معطل! الضغط يتراكم (Queue is filling up).")
+
+                # الرسم البياني
+                st.line_chart(df.tail(40).pivot_table(index='الوقت', columns='المنشأة', values='التيار (A)'), height=250)
+                
+
+                # الجدول
+                def style_func(row):
+                    if row['level'] == 3: return ['background-color: #8b0000; color: white'] * len(row)
+                    if row['level'] == 2: return ['background-color: #705d00; color: white'] * len(row)
+                    return [''] * len(row)
+
+                st.dataframe(
+                    df_display[["المنشأة", "التيار (A)", "الحالة", "الوقت", "level"]].style.apply(style_func, axis=1),
+                    use_container_width=True, height=500, column_config={"level": None}
+                )
         
         time.sleep(1)
+    
