@@ -7,16 +7,24 @@ import random
 from datetime import datetime
 
 # --- 1. إعدادات الصفحة ---
-st.set_page_config(page_title="نظام طاقة الأنبار - المراقبة الذكية", layout="wide")
+st.set_page_config(page_title="نظام طاقة الأنبار - الفرز الرباعي الذكي", layout="wide")
 
-DB_FILE = "anbar_white_table_v1.json"
+DB_FILE = "anbar_batch_sort_v1.json"
 
-STATIONS = {
-    "مستشفى الرمادي التعليمي": {"max": 1000},
-    "معمل زجاج الرمادي": {"max": 1200},
-    "محطة مياه الورار": {"max": 900},
-    "جامعة الأنبار": {"max": 700},
-    "حي التأميم (سكني)": {"max": 500}
+STATIONS_LIST = [
+    "مستشفى الرمادي التعليمي", 
+    "معمل زجاج الرمادي", 
+    "محطة مياه الورار", 
+    "جامعة الأنبار", 
+    "حي التأميم (سكني)"
+]
+
+STATIONS_SPECS = {
+    "مستشفى الرمادي التعليمي": 1000,
+    "معمل زجاج الرمادي": 1200,
+    "محطة مياه الورار": 900,
+    "جامعة الأنبار": 700,
+    "حي التأميم (سكني)": 500
 }
 
 # --- 2. إدارة البيانات ---
@@ -40,10 +48,11 @@ def apply_system_logic(new_readings, protocol_on):
     
     if new_readings:
         data["entries"].extend(new_readings)
-        data["entries"] = data["entries"][-60:]
+        # الاحتفاظ بآخر 40 قراءة (حوالي 10 مجموعات) لسرعة العرض
+        data["entries"] = data["entries"][-40:]
     
     if protocol_on:
-        # استقرار عند 25% كما طلبت سابقاً
+        # استقرار البروتوكول عند 25%
         target = 25.0
         if data["load_val"] > (target + 2):
             data["load_val"] -= 10.0
@@ -53,9 +62,9 @@ def apply_system_logic(new_readings, protocol_on):
             data["load_val"] = random.uniform(23.0, 27.0)
     else:
         if new_readings:
-            data["load_val"] += len(new_readings) * 2.0
+            data["load_val"] += len(new_readings) * 1.5
         else:
-            data["load_val"] = max(0.0, data["load_val"] - 4.0) # تبريد تلقائي
+            data["load_val"] = max(0.0, data["load_val"] - 4.0)
             
     if data["load_val"] >= 100.0:
         data["load_val"] = 100.0
@@ -64,7 +73,7 @@ def apply_system_logic(new_readings, protocol_on):
     save_data(data)
     return data
 
-# --- 3. واجهة المستخدم ---
+# --- 3. الواجهة ---
 st.sidebar.title("⚡ مركز سيطرة الرمادي")
 page = st.sidebar.radio("انتقل إلى:", ["🕹️ غرفة التحكم", "🖥️ شاشة المراقبة"])
 protocol_active = st.sidebar.toggle("🛡️ تفعيل بروتوكول الحماية", value=False)
@@ -86,57 +95,58 @@ if page == "🕹️ غرفة التحكم":
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("🔧 إرسال يدوي")
-            for name, specs in STATIONS.items():
-                val = st.slider(f"{name}", 0, 1500, value=int(specs['max']*0.6), key=f"s_{name}")
+            for name, m_val in STATIONS_SPECS.items():
+                val = st.slider(f"{name}", 0, 1500, value=int(m_val*0.6), key=f"s_{name}")
                 if st.button(f"إرسال {name}", key=f"b_{name}"):
-                    pct = (val / specs['max']) * 100
+                    pct = (val / m_val) * 100
                     stt = "🔴 خطر" if pct >= 95 else "🟡 تنبيه" if pct >= 85 else "🟢 مستقر"
+                    lvl = 3 if pct >= 95 else 2 if pct >= 85 else 1
                     apply_system_logic([{
                         "المحطة": name, "التيار (A)": val, "الحالة": stt, 
-                        "level": 3 if pct >= 95 else 2 if pct >= 85 else 1,
-                        "timestamp": time.time(), "الوقت": datetime.now().strftime("%H:%M:%S")
+                        "level": lvl, "timestamp": time.time(), "الوقت": datetime.now().strftime("%H:%M:%S")
                     }], protocol_active)
                     st.toast(f"تم إرسال {name}")
 
         with col2:
-            st.subheader("🚀 بث تلقائي (4 قراءات معاً)")
+            st.subheader("🚀 بث تلقائي (مجموعات رباعية)")
             run_auto = st.checkbox("تشغيل البث المستمر")
             auto_place = st.empty()
             while run_auto:
                 if load_data()["collapsed"]: st.rerun(); break
                 
-                # إرسال 4 محطات بشكل واحد (Batch)
-                selected = random.sample(list(STATIONS.keys()), 4)
+                # توحيد التوقيت للأربعة بيانات لضمان بقائها معاً في الأعلى
+                batch_time = time.time()
+                batch_clock = datetime.now().strftime("%H:%M:%S")
+                
+                selected = random.sample(STATIONS_LIST, 4)
                 batch = []
                 for n in selected:
-                    s_max = STATIONS[n]['max']
-                    v = random.randint(int(s_max*0.5), int(s_max*1.2))
+                    s_max = STATIONS_SPECS[n]
+                    v = random.randint(int(s_max*0.4), int(s_max*1.2))
                     pct = (v / s_max) * 100
                     stt = "🔴 خطر" if pct >= 95 else "🟡 تنبيه" if pct >= 85 else "🟢 مستقر"
+                    lvl = 3 if pct >= 95 else 2 if pct >= 85 else 1
                     batch.append({
                         "المحطة": n, "التيار (A)": v, "الحالة": stt, 
-                        "level": 3 if pct >= 95 else 2 if pct >= 85 else 1,
-                        "timestamp": time.time(), "الوقت": datetime.now().strftime("%H:%M:%S")
+                        "level": lvl, "timestamp": batch_time, "الوقت": batch_clock
                     })
+                
                 apply_system_logic(batch, protocol_active)
-                auto_place.info(f"📡 يتم ضخ 4 محطات حالياً... الضغط: {load_data()['load_val']:.1f}%")
+                auto_place.info(f"📡 يتم ضخ 4 محطات دفعة واحدة... الضغط: {load_data()['load_val']:.1f}%")
                 time.sleep(1)
 
 # ==========================================
 # صفحة المراقبة
 # ==========================================
 else:
-    st.title("🖥️ شاشة المراقبة المركزية")
+    st.title("🖥️ شاشة المراقبة والفرز الرباعي")
     mon_placeholder = st.empty()
     
-    # تنسيق CSS لجعل خلفية الجدول بيضاء
+    # CSS لجعل الجدول أبيض والخلفية متناسقة
     st.markdown("""
         <style>
-        .stDataFrame {
-            background-color: white;
-            border-radius: 10px;
-            padding: 5px;
-        }
+        .stDataFrame { background-color: white !important; border-radius: 10px; }
+        thead tr th { background-color: #f0f2f6 !important; color: black !important; }
         </style>
     """, unsafe_allow_html=True)
 
@@ -155,28 +165,27 @@ else:
             if state["entries"]:
                 df = pd.DataFrame(state["entries"])
                 
-                # --- الفرز الذكي: الأخطر (level 3) ثم الأحدث زمنياً ---
-                df_display = df.sort_values(by=['level', 'timestamp'], ascending=[False, False])
+                # --- المنطق المطلوب: الفرز المزدوج ---
+                # 1. التوقيت (timestamp) تنازلي: ليظهر أحدث "باكيت" في الأعلى
+                # 2. المستوى (level) تنازلي: ليظهر الأحمر ثم الأصفر داخل نفس الباكيت
+                df_display = df.sort_values(by=['timestamp', 'level'], ascending=[False, False])
 
-                # دالة التلوين (خلفيات ملونة فاتحة مع نصوص غامقة لتناسب الجدول الأبيض)
-                def style_white_table(row):
+                def style_white_rows(row):
                     lvl = row.get('level', 1)
-                    if lvl == 3: # أحمر
-                        return ['background-color: #ffcccc; color: #800000; font-weight: bold'] * len(row)
-                    if lvl == 2: # أصفر/برتقالي
-                        return ['background-color: #fff4cc; color: #856404'] * len(row)
-                    return ['background-color: #d4edda; color: #155724'] * len(row) # أخضر
+                    if lvl == 3: return ['background-color: #ffcccc; color: #800000; font-weight: bold'] * len(row)
+                    if lvl == 2: return ['background-color: #fff4cc; color: #856404'] * len(row)
+                    return ['background-color: #d4edda; color: #155724'] * len(row)
 
-                st.subheader("📋 سجل الحالات (الأولوية للأخطر 🔴)")
+                st.subheader("📋 سجل البيانات (أحدث 4 بيانات في الأعلى مع فرز الأخطر)")
                 st.dataframe(
-                    df_display[["المحطة", "التيار (A)", "الحالة", "الوقت"]].head(15).style.apply(style_white_table, axis=1),
+                    df_display[["المحطة", "التيار (A)", "الحالة", "الوقت"]].head(20).style.apply(style_white_rows, axis=1),
                     use_container_width=True, hide_index=True
                 )
                 
-                st.subheader("📊 مخطط الأحمال")
+                st.subheader("📊 مخطط توزيع الأحمال")
                 chart_df = df.pivot_table(index='الوقت', columns='المحطة', values='التيار (A)').ffill()
                 st.line_chart(chart_df, height=200)
             else:
-                st.info("بانتظار البيانات...")
+                st.info("بانتظار وصول البيانات...")
         time.sleep(1)
-                
+                    
