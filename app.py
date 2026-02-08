@@ -1,13 +1,17 @@
 import streamlit as st
 import pandas as pd
-import random
+import json
+import os
 import time
+import random
 from datetime import datetime
 
-# --- السطر الأول: إعدادات الصفحة (يجب أن يبقى الأول) ---
+# إعدادات الصفحة الرسمية
 st.set_page_config(page_title="نظام طاقة الأنبار الذكي", layout="wide")
 
-# 1. إعدادات المنشآت والمتوسطات
+DB_FILE = "grid_database.json"
+
+# --- 1. إعدادات المنشآت والمتوسطات المرجعية ---
 LOCATIONS_CONFIG = {
     "مستشفى الرمادي التعليمي": {"avg": 400, "priority": 10},
     "معمل زجاج الرمادي": {"avg": 500, "priority": 10},
@@ -15,12 +19,18 @@ LOCATIONS_CONFIG = {
     "حي التأميم (المغذي الرئيسي)": {"avg": 300, "priority": 7}
 }
 
-# 2. تهيئة الذاكرة (Session State)
-if 'data_history' not in st.session_state:
-    st.session_state.data_history = []
+# دالة إدارة البيانات (قاعدة البيانات)
+def load_data():
+    if not os.path.exists(DB_FILE): return []
+    try:
+        with open(DB_FILE, "r") as f:
+            return json.load(f)
+    except: return []
 
-def add_entry(name, current):
+def save_entry(name, current):
+    history = load_data()
     avg = LOCATIONS_CONFIG[name]["avg"]
+    
     if current < avg:
         status, level = "🟢 مستقر", 1
     elif avg <= current < (avg * 1.2):
@@ -37,76 +47,94 @@ def add_entry(name, current):
         "level": level,
         "p": LOCATIONS_CONFIG[name]["priority"]
     }
-    # إضافة البيانات في البداية لتظهر بشكل متسلسل
-    st.session_state.data_history.append(entry)
-    if len(st.session_state.data_history) > 40:
-        st.session_state.data_history.pop(0)
+    history.append(entry)
+    with open(DB_FILE, "w") as f:
+        json.dump(history[-50:], f)
 
-# --- 3. تصميم الواجهة الجانبية ---
-with st.sidebar:
-    st.title("⚙️ التحكم بالنظام")
-    mode = st.radio("وضعية التشغيل:", ["بالبروتوكول الذكي (منظم)", "بدون بروتوكول (خطر الانهيار)"])
-    input_method = st.radio("طريقة الإدخال:", ["يدوي (Sliders)", "تلقائي (Fast 0.5s)"])
-    if st.button("🗑️ مسح السجل"):
-        st.session_state.data_history = []
-        st.rerun()
+# --- 2. التنقل الجانبي (Navigation) ---
+st.sidebar.title("📑 قائمة النظام")
+page = st.sidebar.radio("انتقل إلى:", ["🕹️ لوحة التحكم (إدخال)", "🖥️ شاشة المراقبة (تحليل)"])
 
-# --- 4. تقسيم الشاشة إلى عمودين (صفحتين متجاورتين) ---
-col_input, col_display = st.columns([1, 2], gap="large")
+st.sidebar.markdown("---")
+protocol_active = st.sidebar.toggle("تفعيل البروتوكول الذكي", value=True)
 
-# --- القسم الأول (اليمين): وحدة الإدخال ---
-with col_input:
-    st.header("📥 وحدة الإدخال")
-    if input_method == "يدوي (Sliders)":
-        st.write("حرك الشريط لإرسال البيانات:")
-        for loc in LOCATIONS_CONFIG.keys():
-            val = st.slider(f"{loc}:", 0, 800, value=LOCATIONS_CONFIG[loc]["avg"], key=loc)
-            # إرسال البيانات إذا تغيرت القيمة
-            if st.session_state.get(f"prev_{loc}") != val:
-                add_entry(loc, val)
-                st.session_state[f"prev_{loc}"] = val
+if st.sidebar.button("🗑️ مسح جميع البيانات"):
+    if os.path.exists(DB_FILE): os.remove(DB_FILE)
+    st.rerun()
+
+# --- 3. الصفحة الأولى: لوحة التحكم ---
+if page == "🕹️ لوحة التحكم (إدخال)":
+    st.title("🕹️ وحدة التحكم الميداني")
+    st.info("من هنا يمكنك التحكم في أحمال المنشآت يدوياً أو تفعيل البث التلقائي.")
+    
+    input_mode = st.selectbox("اختر نمط الإرسال:", ["يدوي (Sliders)", "تلقائي (0.5 ثانية)"])
+    
+    if input_mode == "يدوي (Sliders)":
+        st.subheader("🎛️ أدوات التحكم اليدوي")
+        cols = st.columns(2)
+        for i, loc in enumerate(LOCATIONS_CONFIG.keys()):
+            with cols[i % 2]:
+                val = st.slider(f"تيار {loc}:", 0, 800, value=LOCATIONS_CONFIG[loc]["avg"], key=loc)
+                if st.session_state.get(f"prev_{loc}") != val:
+                    save_entry(loc, val)
+                    st.session_state[f"prev_{loc}"] = val
     else:
-        st.success("البث التلقائي نشط...")
-        # منطق التحديث التلقائي
+        st.warning("📡 البث التلقائي نشط الآن...")
         name = random.choice(list(LOCATIONS_CONFIG.keys()))
         avg = LOCATIONS_CONFIG[name]["avg"]
         val = random.randint(int(avg*0.7), int(avg*1.6))
-        add_entry(name, val)
+        save_entry(name, val)
         time.sleep(0.5)
         st.rerun()
 
-# --- القسم الثاني (اليسار): شاشة المراقبة (الجدول والرسم) ---
-with col_display:
-    st.header("🖥️ شاشة المراقبة")
+# --- 4. الصفحة الثانية: شاشة المراقبة ---
+else:
+    st.title("🖥️ مركز المراقبة والتحليل اللحظي")
     
-    if not st.session_state.data_history:
-        st.info("بانتظار وصول البيانات...")
-    else:
-        df = pd.DataFrame(st.session_state.data_history)
+    # تحديث تلقائي للشاشة كل ثانية لمتابعة البيانات الواردة من الصفحة الأخرى
+    @st.fragment(run_every="1s")
+    def show_monitoring():
+        data = load_data()
+        if not data:
+            st.warning("بانتظار استقبال بيانات... (اذهب لصفحة التحكم وابدأ الإرسال)")
+            return
 
-        # أ. الرسم البياني (في الأعلى)
-        st.subheader("📊 المخطط البياني للأحمال")
-        chart_df = df.pivot_table(index='الوقت', columns='المنشأة', values='التيار (A)').ffill()
-        st.line_chart(chart_df, height=250)
+        df = pd.DataFrame(data)
 
-        # ب. الجدول (في الأسفل)
-        st.subheader("📋 سجل البيانات الفني (Data Table)")
-        
-        # منطق البروتوكول (الفرز)
-        if mode == "بالبروتوكول الذكي (منظم)":
+        # منطق البروتوكول (الفرز vs الانهيار)
+        if protocol_active:
+            st.success("✅ البروتوكول فعال: فرز الأولويات والمناطق الحرجة نشط")
+            # فرز: الخطر أولاً ثم أهمية المنشأة
             df_display = df.sort_values(by=["level", "p"], ascending=[False, False])
         else:
-            df_display = df.iloc[::-1] # ترتيب حسب الوصول فقط (فوضى)
+            st.error("🚨 بدون بروتوكول: خطر انهيار الشبكة (البيانات تظهر عشوائياً)")
+            df_display = df.iloc[::-1] # ترتيب حسب الوصول فقط
+            
+            # محاكاة الانهيار
+            danger_count = len(df[df['level'] == 3])
+            if danger_count > 5:
+                st.markdown("<h2 style='color:red; text-align:center; border:5px solid red; padding:20px;'>⛔ NETWORK COLLAPSE ⛔<br>تراكم البيانات دون معالجة أولويات</h2>", unsafe_allow_html=True)
 
-        # تنسيق ألوان الجدول
-        def style_rows(row):
-            if "🔴" in row['الحالة']: return ['background-color: #7b0000; color: white'] * len(row)
-            if "🟡" in row['الحالة']: return ['background-color: #6d5c00; color: white'] * len(row)
+        # الرسم البياني
+        st.subheader("📊 المخطط البياني لتذبذب الأحمال")
+        chart_df = df.pivot_table(index='الوقت', columns='المنشأة', values='التيار (A)').ffill()
+        st.line_chart(chart_df, height=350)
+        
+        
+
+        # جدول البيانات
+        st.subheader("📋 سجل البيانات الفني (Live Packet Log)")
+        
+        def color_logic(row):
+            if "🔴" in row['الحالة']: return ['background-color: #800000; color: white'] * len(row)
+            if "🟡" in row['الحالة']: return ['background-color: #705d00; color: white'] * len(row)
             return [''] * len(row)
 
         st.dataframe(
-            df_display.drop(columns=['level', 'p'], errors='ignore').style.apply(style_rows, axis=1),
+            df_display.drop(columns=['level', 'p'], errors='ignore').style.apply(color_logic, axis=1),
             use_container_width=True,
-            height=400
+            height=450
         )
-        
+
+    show_monitoring()
+                
