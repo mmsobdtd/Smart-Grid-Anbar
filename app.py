@@ -183,4 +183,4 @@ else:
             else:
                 st.info("بانتظار البيانات...")
         time.sleep(1)
-    
+                    
