@@ -6,17 +6,17 @@ import time
 import random
 from datetime import datetime
 
-# 1. إعدادات الصفحة الأساسية
-st.set_page_config(page_title="Smart Grid - Anbar University", layout="wide")
+# إعداد الصفحة
+st.set_page_config(page_title="نظام مراقبة الطاقة الذكي", layout="wide")
 
-DB_FILE = "grid_final_data.json"
+DB_FILE = "grid_data_v6.json"
 
-# تعريف المنشآت بناءً على متطلبات مشروعك
+# تعريف المنشآت والمتوسطات المرجعية
 LOCATIONS = {
-    "مستشفى الرمادي التعليمي": {"avg": 400, "priority": 10},
-    "معمل زجاج الرمادي": {"avg": 500, "priority": 10},
-    "جامعة الأنبار (المجمع)": {"avg": 350, "priority": 8},
-    "حي التأميم (المغذي الرئيسي)": {"avg": 300, "priority": 7}
+    "الموقع أ (مستشفى)": {"avg": 400, "priority": 10},
+    "الموقع ب (منشأة صناعية)": {"avg": 500, "priority": 10},
+    "الموقع ج (مؤسسة تعليمية)": {"avg": 350, "priority": 8},
+    "الموقع د (منطقة سكنية)": {"avg": 300, "priority": 7}
 }
 
 def load_data():
@@ -30,7 +30,7 @@ def load_data():
 def save_data(entries):
     history = load_data()
     history.extend(entries)
-    # الحفاظ على آخر 100 سجل لضمان سرعة المتصفح
+    # الاحتفاظ بآخر 100 سجل لضمان سرعة الأداء
     with open(DB_FILE, "w", encoding='utf-8') as f:
         json.dump(history[-100:], f, ensure_ascii=False)
 
@@ -41,33 +41,36 @@ def create_entry(name, current):
     else: status, level = "🔴 خطر (حمل زائد)", 3
     
     return {
-        "المنشأة": name, "التيار (A)": current, "الحالة": status,
+        "المنشأة": name, 
+        "التيار (A)": current, 
+        "الحالة": status,
         "الوقت": datetime.now().strftime("%H:%M:%S"),
-        "timestamp": time.time(), "level": level
+        "timestamp": time.time(), 
+        "level": level
     }
 
 # --- القائمة الجانبية (Navigation) ---
-st.sidebar.title("🛂 وحدة التحكم - جامعة الأنبار")
+st.sidebar.title("🛂 وحدة التحكم")
 page = st.sidebar.radio("انتقل إلى:", ["🕹️ لوحة التحكم", "🖥️ شاشة المراقبة"])
-protocol_active = st.sidebar.toggle("تفعيل البروتوكول الذكي", value=True)
+protocol_active = st.sidebar.toggle("تفعيل بروتوكول الأولويات", value=True)
 
 if st.sidebar.button("🗑️ مسح السجلات"):
     if os.path.exists(DB_FILE): os.remove(DB_FILE)
     st.rerun()
 
-# --- 1. صفحة التحكم (الإرسال) ---
+# --- 1. صفحة التحكم ---
 if page == "🕹️ لوحة التحكم":
-    st.title("🕹️ وحدة الإرسال الميداني")
+    st.title("🕹️ وحدة الإرسال والتحكم")
     
-    input_mode = st.selectbox("نمط العمل:", ["تلقائي (4 مواقع معاً)", "يدوي"])
+    input_mode = st.selectbox("نمط العمل:", ["تلقائي (بث 4 مواقع كل 1 ثانية)", "يدوي"])
     
-    if input_mode == "تلقائي (4 مواقع معاً)":
-        run_auto = st.toggle("🚀 بدء البث الجماعي (كل 1 ثانية)", value=False)
+    if input_mode == "تلقائي (بث 4 مواقع كل 1 ثانية)":
+        run_auto = st.toggle("🚀 بدء البث الجماعي", value=False)
         if run_auto:
-            st.success("📡 البث الجماعي نشط الآن... القراءات تُرسل للمواقع الأربعة معاً.")
+            st.success("📡 البث الجماعي نشط... يتم تحديث كافة المواقع كل ثانية.")
             placeholder = st.empty()
             while run_auto:
-                batch = [create_entry(n, random.randint(int(LOCATIONS[n]["avg"]*0.6), int(LOCATIONS[n]["avg"]*1.6))) for n in LOCATIONS.keys()]
+                batch = [create_entry(n, random.randint(int(LOCATIONS[n]["avg"]*0.7), int(LOCATIONS[n]["avg"]*1.6))) for n in LOCATIONS.keys()]
                 save_data(batch)
                 with placeholder.container():
                     st.write(f"✅ تم بث نبضة بيانات شاملة عند: {datetime.now().strftime('%H:%M:%S')}")
@@ -81,7 +84,7 @@ if page == "🕹️ لوحة التحكم":
                 save_data([create_entry(loc, val)])
                 st.session_state[f"prev_{loc}"] = val
 
-# --- 2. صفحة المراقبة (الجدول والرسم) ---
+# --- 2. صفحة المراقبة ---
 else:
     st.title("🖥️ مركز المراقبة والتحليل اللحظي")
 
@@ -89,44 +92,46 @@ else:
     def update_monitor():
         data = load_data()
         
-        # أ. الرسم البياني
+        # المخطط البياني
         st.subheader("📊 المخطط الزمني للأحمال")
         if data:
-            df_chart = pd.DataFrame(data)
-            chart_data = df_chart.pivot_table(index='الوقت', columns='المنشأة', values='التيار (A)').ffill()
+            df_all = pd.DataFrame(data)
+            chart_data = df_all.pivot_table(index='الوقت', columns='المنشأة', values='التيار (A)').ffill()
             st.line_chart(chart_data, height=250)
         else:
-            st.info("بانتظار وصول البيانات لرسم المخطط...")
+            st.info("بانتظار وصول البيانات...")
 
-        # ب. الجدول (Data Table)
-        st.subheader("📋 سجل البيانات الفني (Data Log)")
+        # الجدول الموحد
+        st.subheader("📋 سجل البيانات الفني")
         if not data:
-            st.warning("⚠️ السجل فارغ. يرجى تفعيل البث من 'لوحة التحكم'.")
+            st.warning("⚠️ السجل فارغ. ابدأ البث من لوحة التحكم.")
             return
             
         df = pd.DataFrame(data)
         
-        # منطق الفرز (البروتوكول)
+        # منطق الفرز المطور:
+        # 1. إذا كان البروتوكول فعالاً: نجعل "الخطر" (level 3) أولاً، ثم الترتيب الزمني للأحدث.
+        # 2. بقية الحالات (1 و 2) تظهر مرتبة زمنياً تحت الخطر.
         if protocol_active:
-            # الترتيب: الخطر (level 3) أولاً، ثم الأحدث زمنياً
-            df_display = df.sort_values(by=["level", "timestamp"], ascending=[False, False])
+            # إنشاء عمود مؤقت لتمييز الخطر (True للحالة 3)
+            df['is_danger'] = df['level'] == 3
+            df_display = df.sort_values(by=["is_danger", "timestamp"], ascending=[False, False])
         else:
             df_display = df.sort_values(by="timestamp", ascending=False)
 
-        # دالة التنسيق المصلحة لتجنب KeyError
+        # تنسيق الألوان
         def style_rows(row):
             if row['level'] == 3: return ['background-color: #800000; color: white; font-weight: bold'] * len(row)
             if row['level'] == 2: return ['background-color: #705d00; color: white'] * len(row)
             return [''] * len(row)
 
-        # عرض الأعمدة المطلوبة فقط مع التنسيق
+        # عرض الجدول مع إخفاء الأعمدة التقنية
         display_cols = ["المنشأة", "التيار (A)", "الحالة", "الوقت", "level"]
         st.dataframe(
             df_display[display_cols].style.apply(style_rows, axis=1),
             use_container_width=True, 
-            height=450,
-            column_config={"level": None} # إخفاء عمود المستوى تقنياً من العرض
+            height=500,
+            column_config={"level": None} # إخفاء عمود المستوى من العرض النهائي
         )
 
     update_monitor()
-            
