@@ -3,106 +3,121 @@ import pandas as pd
 import json
 import os
 import time
-import random
+from datetime import datetime
 
-# إعدادات الصفحة
-st.set_page_config(page_title="Smart Grid Protocol Demo", layout="wide")
+# إعدادات الصفحة الرسمية
+st.set_page_config(page_title="نظام إدارة أحمال الأنبار - إدخال يدوياً", layout="wide")
 
-DB_FILE = "grid_state.json"
+DB_FILE = "anbar_manual_grid.json"
 
-# دالة لإدارة البيانات المشتركة بين الطلاب والسيرفر
+# --- تعريف المنشآت والمتوسطات المرجعية ---
+LOCATIONS_CONFIG = {
+    "مستشفى الرمادي التعليمي": {"avg": 400, "priority": 10},
+    "معمل زجاج الرمادي": {"avg": 500, "priority": 10},
+    "جامعة الأنبار (المجمع)": {"avg": 350, "priority": 8},
+    "حي التأميم (المغذي الرئيسي)": {"avg": 300, "priority": 7}
+}
+
 def load_data():
-    if not os.path.exists(DB_FILE):
-        data = {f"Station {i}": {"current": 200, "timestamp": time.time()} for i in range(1, 5)}
-        save_data(data)
-        return data
-    with open(DB_FILE, "r") as f:
-        return json.load(f)
+    if not os.path.exists(DB_FILE): return []
+    try:
+        with open(DB_FILE, "r") as f:
+            content = f.read()
+            return json.loads(content) if content else []
+    except: return []
 
-def save_data(data):
-    with open(DB_FILE, "w") as f:
-        json.dump(data, f)
-
-# تحميل البيانات الحالية
-current_loads = load_data()
-
-# --- القائمة الجانبية (التحكم في العرض) ---
-st.sidebar.title("🎮 لوحة التحكم بالعرض")
-mode = st.sidebar.radio("اختر وضع النظام:", ["بدون بروتوكول (Chaos)", "مع البروتوكول (Smart)"])
-role = st.sidebar.selectbox("من أنت؟", ["طالب (المحطة)", "المراقب (غرفة التحكم)"])
-
-# --- واجهة الطالب (تحديث لحظي) ---
-if role == "طالب (المحطة)":
-    st.header("📲 وحدة تحكم المحطة الفرعية")
-    station_id = st.selectbox("اختر رقم محطتك:", list(current_loads.keys()))
+def save_entry(name, current):
+    history = load_data()
+    avg = LOCATIONS_CONFIG[name]["avg"]
     
-    # تحديث البيانات فور تغيير المنزلق
-    val = st.slider("اسحب لتغيير الأمبيرية (I):", 0, 600, current_loads[station_id]["current"])
-    
-    if val != current_loads[station_id]["current"]:
-        current_loads[station_id]["current"] = val
-        current_loads[station_id]["timestamp"] = time.time()
-        save_data(current_loads)
-        st.success(f"تم تحديث البيانات لحظياً: {val} A")
-
-# --- واجهة المراقب (غرفة التحكم) ---
-else:
-    st.header("🖥️ غرفة التحكم المركزية - جامعة الأنبار")
-    st.write(f"الوضع الحالي: **{mode}**")
-    
-    # زر للتحديث اليدوي (لأن الطلاب يرسلون بياناتهم باستمرار)
-    if st.button("تحديث لوحة البيانات 🔄"):
-        st.rerun()
-
-    # تحويل البيانات لجدول
-    raw_data = []
-    for s, info in current_loads.items():
-        raw_data.append({"Station": s, "Current": info["current"], "Time": info["timestamp"]})
-    df = pd.DataFrame(raw_data)
-
-    # --- سيناريو 1: بدون بروتوكول (انهيار الشبكة) ---
-    if mode == "بدون بروتوكول (Chaos)":
-        st.error("🚨 تحذير: النظام يعمل بدون قواعد (No Protocol)")
-        st.warning("الملاحظة: البيانات تصل بشكل عشوائي، لا يوجد ترتيب للأولويات، النظام عرضة للانهيار.")
-        
-        # محاكاة "فوضى": عرض البيانات بترتيب زمني عشوائي أو غير مرتب
-        st.subheader("📋 سجل الحزم الواردة (تداخل البيانات)")
-        st.write("بيانات خام متداخلة (Collisions):")
-        st.table(df.sample(frac=1)) # عرض البيانات بترتيب عشوائي تماماً لمحاكاة التداخل
-        
-        # محاكاة الانهيار بصرياً
-        if df['Current'].max() > 400:
-            st.markdown("<h1 style='color:red; text-align:center;'>SYSTEM OVERLOAD - NETWORK COLLAPSE</h1>", unsafe_allow_html=True)
-            st.image("https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNHJmNjR4bm16Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6Z3R6JmVwPXYxX2ludGVybmFsX2dpZl9ieV9pZCZjdD1n/3o7TKMGpxPucK8hLJC/giphy.gif", width=400)
-
-    # --- سيناريو 2: مع البروتوكول (تنظيم وأولوية) ---
+    # منطق تصنيف الحالة بناءً على المتوسط
+    if current < avg:
+        status, level = "🟢 مستقر (Normal)", 1
+    elif avg <= current < (avg * 1.2):
+        status, level = "🟡 تنبيه (Warning)", 2
     else:
-        st.success("✅ البروتوكول الذكي نشط (Priority Protocol Active)")
-        
-        # تطبيق منطق الأولويات: 300A (خطر) | 250A (طبيعي)
-        def classify(c):
-            if c >= 300: return "🔴 HIGH PRIORITY (Critical)"
-            elif c <= 250: return "🟢 Normal"
-            else: return "🟡 Warning"
+        status, level = "🔴 خطر (Critical)", 3
 
-        df['Status'] = df['Current'].apply(classify)
-        
-        # الفرز حسب الأولوية (الأخطر في الأعلى)
-        df_sorted = df.sort_values(by="Current", ascending=False)
-        
-        # عرض الرسوم البيانية المنظمة
-        st.subheader("📊 مراقبة استقرار الأحمال")
-        st.bar_chart(df_sorted.set_index('Station')['Current'])
+    entry = {
+        "المنشأة": name,
+        "التيار (A)": current,
+        "المتوسط": avg,
+        "الحالة": status,
+        "الوقت": datetime.now().strftime("%H:%M:%S"),
+        "level": level,
+        "p": LOCATIONS_CONFIG[name]["priority"]
+    }
+    history.append(entry)
+    with open(DB_FILE, "w") as f:
+        json.dump(history[-100:], f)
 
+# --- القائمة الجانبية ---
+st.sidebar.title("🛂 وحدة التحكم")
+mode = st.sidebar.toggle("تفعيل بروتوكول الأولوية", value=True)
+role = st.sidebar.radio("اختر المهمة:", ["إدخال بيانات (الطالب)", "شاشة المراقبة (المراقب)"])
+
+if st.sidebar.button("مسح السجلات"):
+    if os.path.exists(DB_FILE): os.remove(DB_FILE)
+    st.rerun()
+
+# --- 1. واجهة إدخال البيانات (يدوياً) ---
+if role == "إدخال بيانات (الطالب)":
+    st.title("📥 وحدة إدخال البيانات الميدانية")
+    st.info("قم باختيار المنشأة وإدخال قيمة التيار المقاسة حالياً.")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        name = st.selectbox("المنشأة المستهدفة:", list(LOCATIONS_CONFIG.keys()))
+    with col2:
+        current_val = st.number_input("قيمة التيار (Amps):", min_value=0, max_value=1000, value=LOCATIONS_CONFIG[name]["avg"])
+    
+    if st.button("إرسال البيانات إلى السيرفر"):
+        save_entry(name, current_val)
+        st.success(f"تم إرسال {current_val}A لـ {name} بنجاح!")
+        st.balloons() # تأثير بصري عند الإرسال
+
+# --- 2. واجهة المراقب (تحديث تلقائي) ---
+else:
+    st.title("🖥️ مركز المراقبة والتحليل اللحظي")
+    st.caption("جامعة الأنبار - كلية الهندسة | مشروع إدارة الأحمال الذكية")
+
+    @st.fragment(run_every="2s")
+    def dashboard():
+        data = load_data()
+        if not data:
+            st.warning("بانتظار استقبال أول حزمة بيانات... (اذهب لصفحة الإدخال أولاً)")
+            return
+
+        df = pd.DataFrame(data)
+
+        # تطبيق البروتوكول (الفرز)
+        if mode:
+            df_display = df.sort_values(by=["level", "p"], ascending=[False, False])
+        else:
+            df_display = df.iloc[::-1]
+
+        # --- الرسم البياني ---
+        st.subheader("📊 تحليل الرسم البياني للأحمال")
+        chart_df = df.pivot_table(index='الوقت', columns='المنشأة', values='التيار (A)').ffill()
+        st.line_chart(chart_df, height=350)
+        
         
 
-        # عرض الجدول المنظم
-        st.subheader("📋 جدول البيانات المنظم حسب الأولوية")
-        st.dataframe(df_sorted.style.highlight_max(axis=0, color='red'), use_container_width=True)
+        # --- جدول البيانات ---
+        st.subheader("📋 سجل استلام الحزم (Data Logging)")
+        
+        def color_rows(row):
+            if "🔴" in row['الحالة']:
+                return ['background-color: #7b0000; color: white; font-weight: bold'] * len(row)
+            elif "🟡" in row['الحالة']:
+                return ['background-color: #6d5c00; color: white'] * len(row)
+            return [''] * len(row)
 
-        # التنبيهات
-        critical = df_sorted[df_sorted['Current'] >= 300]
-        if not critical.empty:
-            for _, row in critical.iterrows():
-                st.toast(f"🚨 تنبيه عاجل: {row['Station']} تجاوزت الحد المسموح!", icon="🔥")
-                
+        st.dataframe(
+            df_display.drop(columns=['level', 'p'], errors='ignore').style.apply(color_rows, axis=1),
+            use_container_width=True,
+            height=400
+        )
+
+    dashboard()
+    
