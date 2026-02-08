@@ -7,16 +7,16 @@ import random
 from datetime import datetime
 
 # إعداد الصفحة
-st.set_page_config(page_title="نظام مراقبة الطاقة الذكي", layout="wide")
+st.set_page_config(page_title="نظام طاقة الأنبار الذكي", layout="wide")
 
-DB_FILE = "grid_data_v6.json"
+DB_FILE = "grid_batch_sort.json"
 
-# تعريف المنشآت والمتوسطات المرجعية
+# تعريف المنشآت
 LOCATIONS = {
-    "الموقع أ (مستشفى)": {"avg": 400, "priority": 10},
-    "الموقع ب (منشأة صناعية)": {"avg": 500, "priority": 10},
-    "الموقع ج (مؤسسة تعليمية)": {"avg": 350, "priority": 8},
-    "الموقع د (منطقة سكنية)": {"avg": 300, "priority": 7}
+    "مستشفى الرمادي التعليمي": {"avg": 400, "priority": 10},
+    "معمل زجاج الرمادي": {"avg": 500, "priority": 10},
+    "جامعة الأنبار (المجمع)": {"avg": 350, "priority": 8},
+    "حي التأميم (المغذي الرئيسي)": {"avg": 300, "priority": 7}
 }
 
 def load_data():
@@ -29,16 +29,19 @@ def load_data():
 
 def save_data(entries):
     history = load_data()
+    # نضيف البيانات الجديدة في البداية (لتكون هي الأحدث)
+    # نستخدم extend ثم نعكس الترتيب أو نستخدم طريقة أخرى، 
+    # الأفضل: نضيف الجديد للقائمة الموجودة ثم نحفظ الكل.
     history.extend(entries)
-    # الاحتفاظ بآخر 100 سجل لضمان سرعة الأداء
+    # نحتفظ بآخر 80 سجل
     with open(DB_FILE, "w", encoding='utf-8') as f:
-        json.dump(history[-100:], f, ensure_ascii=False)
+        json.dump(history[-80:], f, ensure_ascii=False)
 
-def create_entry(name, current):
+def create_entry(name, current, batch_id):
     avg = LOCATIONS[name]["avg"]
     if current < avg: status, level = "🟢 مستقر", 1
     elif avg <= current < (avg * 1.2): status, level = "🟡 تنبيه", 2
-    else: status, level = "🔴 خطر (حمل زائد)", 3
+    else: status, level = "🔴 خطر", 3
     
     return {
         "المنشأة": name, 
@@ -46,10 +49,11 @@ def create_entry(name, current):
         "الحالة": status,
         "الوقت": datetime.now().strftime("%H:%M:%S"),
         "timestamp": time.time(), 
-        "level": level
+        "level": level,
+        "batch_id": batch_id # معرف فريد للنبضة لتمييز المجموعات
     }
 
-# --- القائمة الجانبية (Navigation) ---
+# --- القائمة الجانبية ---
 st.sidebar.title("🛂 وحدة التحكم")
 page = st.sidebar.radio("انتقل إلى:", ["🕹️ لوحة التحكم", "🖥️ شاشة المراقبة"])
 protocol_active = st.sidebar.toggle("تفعيل بروتوكول الأولويات", value=True)
@@ -62,26 +66,33 @@ if st.sidebar.button("🗑️ مسح السجلات"):
 if page == "🕹️ لوحة التحكم":
     st.title("🕹️ وحدة الإرسال والتحكم")
     
-    input_mode = st.selectbox("نمط العمل:", ["تلقائي (بث 4 مواقع كل 1 ثانية)", "يدوي"])
+    input_mode = st.selectbox("نمط العمل:", ["تلقائي (بث 4 مواقع)", "يدوي"])
     
-    if input_mode == "تلقائي (بث 4 مواقع كل 1 ثانية)":
+    if input_mode == "تلقائي (بث 4 مواقع)":
         run_auto = st.toggle("🚀 بدء البث الجماعي", value=False)
         if run_auto:
-            st.success("📡 البث الجماعي نشط... يتم تحديث كافة المواقع كل ثانية.")
+            st.success("📡 البث نشط... يتم إرسال نبضة بيانات كل ثانية.")
             placeholder = st.empty()
             while run_auto:
-                batch = [create_entry(n, random.randint(int(LOCATIONS[n]["avg"]*0.7), int(LOCATIONS[n]["avg"]*1.6))) for n in LOCATIONS.keys()]
+                # إنشاء معرف فريد للنبضة (باستخدام الوقت الحالي)
+                current_batch_id = time.time()
+                batch = []
+                for n in LOCATIONS.keys():
+                    val = random.randint(int(LOCATIONS[n]["avg"]*0.7), int(LOCATIONS[n]["avg"]*1.6))
+                    batch.append(create_entry(n, val, current_batch_id))
+                
                 save_data(batch)
                 with placeholder.container():
-                    st.write(f"✅ تم بث نبضة بيانات شاملة عند: {datetime.now().strftime('%H:%M:%S')}")
+                    st.write(f"✅ تم إرسال نبضة جديدة (4 مواقع) عند: {datetime.now().strftime('%H:%M:%S')}")
                 time.sleep(1)
                 st.rerun()
     else:
         st.subheader("🎛️ التحكم اليدوي")
+        current_batch_id = time.time()
         for loc in LOCATIONS.keys():
             val = st.slider(f"تيار {loc}:", 0, 800, value=LOCATIONS[loc]["avg"], key=loc)
             if st.session_state.get(f"prev_{loc}") != val:
-                save_data([create_entry(loc, val)])
+                save_data([create_entry(loc, val, current_batch_id)])
                 st.session_state[f"prev_{loc}"] = val
 
 # --- 2. صفحة المراقبة ---
@@ -95,28 +106,26 @@ else:
         # المخطط البياني
         st.subheader("📊 المخطط الزمني للأحمال")
         if data:
-            df_all = pd.DataFrame(data)
-            chart_data = df_all.pivot_table(index='الوقت', columns='المنشأة', values='التيار (A)').ffill()
+            df_chart = pd.DataFrame(data)
+            chart_data = df_chart.pivot_table(index='الوقت', columns='المنشأة', values='التيار (A)').ffill()
             st.line_chart(chart_data, height=250)
-        else:
-            st.info("بانتظار وصول البيانات...")
-
-        # الجدول الموحد
-        st.subheader("📋 سجل البيانات الفني")
+        
+        # الجدول
+        st.subheader("📋 سجل البيانات (أحدث نبضة في الأعلى)")
         if not data:
-            st.warning("⚠️ السجل فارغ. ابدأ البث من لوحة التحكم.")
+            st.warning("⚠️ لا توجد بيانات.")
             return
             
         df = pd.DataFrame(data)
         
-        # منطق الفرز المطور:
-        # 1. إذا كان البروتوكول فعالاً: نجعل "الخطر" (level 3) أولاً، ثم الترتيب الزمني للأحدث.
-        # 2. بقية الحالات (1 و 2) تظهر مرتبة زمنياً تحت الخطر.
+        # --- منطق الفرز الذكي الجديد ---
         if protocol_active:
-            # إنشاء عمود مؤقت لتمييز الخطر (True للحالة 3)
-            df['is_danger'] = df['level'] == 3
-            df_display = df.sort_values(by=["is_danger", "timestamp"], ascending=[False, False])
+            # الترتيب يكون بناءً على مستويين:
+            # 1. رقم النبضة (batch_id): الأحدث (الأكبر رقماً) يكون في الأعلى دائماً.
+            # 2. داخل نفس النبضة: مستوى الخطر (level) يكون في الأعلى.
+            df_display = df.sort_values(by=["batch_id", "level"], ascending=[False, False])
         else:
+            # بدون بروتوكول: ترتيب زمني بحت (الأحدث فوق)
             df_display = df.sort_values(by="timestamp", ascending=False)
 
         # تنسيق الألوان
@@ -125,13 +134,16 @@ else:
             if row['level'] == 2: return ['background-color: #705d00; color: white'] * len(row)
             return [''] * len(row)
 
-        # عرض الجدول مع إخفاء الأعمدة التقنية
-        display_cols = ["المنشأة", "التيار (A)", "الحالة", "الوقت", "level"]
+        # عرض الجدول
+        # نحذف الأعمدة التقنية من العرض (batch_id, timestamp, level)
+        cols_to_show = ["المنشأة", "التيار (A)", "الحالة", "الوقت"]
+        
         st.dataframe(
-            df_display[display_cols].style.apply(style_rows, axis=1),
+            df_display[cols_to_show + ['level']].style.apply(style_rows, axis=1),
             use_container_width=True, 
-            height=500,
-            column_config={"level": None} # إخفاء عمود المستوى من العرض النهائي
+            height=600,
+            column_config={"level": None} # إخفاء عمود المستوى
         )
 
     update_monitor()
+                                                                                             
