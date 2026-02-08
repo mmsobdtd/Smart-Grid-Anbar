@@ -3,14 +3,15 @@ import pandas as pd
 import json
 import os
 import time
+import random
 from datetime import datetime
 
-# إعدادات الصفحة الرسمية
-st.set_page_config(page_title="نظام إدارة أحمال الأنبار - إدخال يدوياً", layout="wide")
+# إعدادات الصفحة
+st.set_page_config(page_title="نظام طاقة الأنبار الذكي", layout="wide")
 
-DB_FILE = "anbar_manual_grid.json"
+DB_FILE = "anbar_hybrid_grid.json"
 
-# --- تعريف المنشآت والمتوسطات المرجعية ---
+# --- إعدادات المنشآت والمتوسطات ---
 LOCATIONS_CONFIG = {
     "مستشفى الرمادي التعليمي": {"avg": 400, "priority": 10},
     "معمل زجاج الرمادي": {"avg": 500, "priority": 10},
@@ -43,81 +44,97 @@ def save_entry(name, current):
         "التيار (A)": current,
         "المتوسط": avg,
         "الحالة": status,
-        "الوقت": datetime.now().strftime("%H:%M:%S"),
+        "الوقت": datetime.now().strftime("%H:%M:%S.%f")[:-3],
         "level": level,
         "p": LOCATIONS_CONFIG[name]["priority"]
     }
     history.append(entry)
     with open(DB_FILE, "w") as f:
-        json.dump(history[-100:], f)
+        json.dump(history[-80:], f)
 
 # --- القائمة الجانبية ---
-st.sidebar.title("🛂 وحدة التحكم")
-mode = st.sidebar.toggle("تفعيل بروتوكول الأولوية", value=True)
-role = st.sidebar.radio("اختر المهمة:", ["إدخال بيانات (الطالب)", "شاشة المراقبة (المراقب)"])
+st.sidebar.title("🛂 لوحة التحكم المركزي")
+st.sidebar.markdown("---")
+input_mode = st.sidebar.radio("طريقة إدخال البيانات:", ["يدوي (تحريك الشريط)", "تلقائي (محاكاة)"])
+protocol_mode = st.sidebar.toggle("تفعيل بروتوكول الأولوية", value=True)
 
 if st.sidebar.button("مسح السجلات"):
     if os.path.exists(DB_FILE): os.remove(DB_FILE)
     st.rerun()
 
-# --- 1. واجهة إدخال البيانات (يدوياً) ---
-if role == "إدخال بيانات (الطالب)":
-    st.title("📥 وحدة إدخال البيانات الميدانية")
-    st.info("قم باختيار المنشأة وإدخال قيمة التيار المقاسة حالياً.")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        name = st.selectbox("المنشأة المستهدفة:", list(LOCATIONS_CONFIG.keys()))
-    with col2:
-        current_val = st.number_input("قيمة التيار (Amps):", min_value=0, max_value=1000, value=LOCATIONS_CONFIG[name]["avg"])
-    
-    if st.button("إرسال البيانات إلى السيرفر"):
-        save_entry(name, current_val)
-        st.success(f"تم إرسال {current_val}A لـ {name} بنجاح!")
-        st.balloons() # تأثير بصري عند الإرسال
+# تقسيم الصفحة إلى "إدخال" و "مراقبة"
+col_input, col_monitor = st.columns([1, 2])
 
-# --- 2. واجهة المراقب (تحديث تلقائي) ---
-else:
-    st.title("🖥️ مركز المراقبة والتحليل اللحظي")
-    st.caption("جامعة الأنبار - كلية الهندسة | مشروع إدارة الأحمال الذكية")
+# --- 1. قسم إدخال البيانات ---
+with col_input:
+    st.header("📥 وحدة الإدخال")
+    
+    if input_mode == "يدوي (تحريك الشريط)":
+        st.write("حرك المنزلق لإرسال البيانات لحظياً:")
+        for loc_name in LOCATIONS_CONFIG.keys():
+            # استخدام Session State لتتبع القيمة السابقة ومنع تكرار الإرسال غير الضروري
+            current_val = st.slider(
+                f"{loc_name} (Amps):", 
+                0, 800, 
+                value=LOCATIONS_CONFIG[loc_name]["avg"],
+                key=f"slider_{loc_name}"
+            )
+            # الإرسال بمجرد تغيير القيمة (Streamlit يعيد التشغيل تلقائياً عند تغيير السلايدر)
+            if st.session_state.get(f"prev_{loc_name}") != current_val:
+                save_entry(loc_name, current_val)
+                st.session_state[f"prev_{loc_name}"] = current_val
 
-    @st.fragment(run_every="2s")
-    def dashboard():
+    else:
+        st.write("البث التلقائي مفعل...")
+        run_auto = st.checkbox("ابدأ المحاكاة (0.5 ثانية)")
+        if run_auto:
+            placeholder = st.empty()
+            while True:
+                name = random.choice(list(LOCATIONS_CONFIG.keys()))
+                avg = LOCATIONS_CONFIG[name]["avg"]
+                val = random.randint(int(avg*0.7), int(avg*1.5))
+                save_entry(name, val)
+                with placeholder.container():
+                    st.success(f"📡 يبث الآن: {name} -> {val}A")
+                time.sleep(0.5)
+                st.rerun()
+
+# --- 2. قسم المراقبة (Dashboard) ---
+with col_monitor:
+    st.header("🖥️ شاشة المراقبة والتحليل")
+    
+    @st.fragment(run_every="1s")
+    def update_dashboard():
         data = load_data()
         if not data:
-            st.warning("بانتظار استقبال أول حزمة بيانات... (اذهب لصفحة الإدخال أولاً)")
+            st.info("بانتظار وصول البيانات...")
             return
 
         df = pd.DataFrame(data)
 
-        # تطبيق البروتوكول (الفرز)
-        if mode:
+        # ترتيب البيانات (البروتوكول)
+        if protocol_mode:
             df_display = df.sort_values(by=["level", "p"], ascending=[False, False])
         else:
             df_display = df.iloc[::-1]
 
-        # --- الرسم البياني ---
-        st.subheader("📊 تحليل الرسم البياني للأحمال")
+        # الرسم البياني
+        st.subheader("📊 تحليل الرسم البياني")
         chart_df = df.pivot_table(index='الوقت', columns='المنشأة', values='التيار (A)').ffill()
-        st.line_chart(chart_df, height=350)
-        
-        
+        st.line_chart(chart_df, height=300)
 
-        # --- جدول البيانات ---
-        st.subheader("📋 سجل استلام الحزم (Data Logging)")
-        
-        def color_rows(row):
-            if "🔴" in row['الحالة']:
-                return ['background-color: #7b0000; color: white; font-weight: bold'] * len(row)
-            elif "🟡" in row['الحالة']:
-                return ['background-color: #6d5c00; color: white'] * len(row)
+        # جدول البيانات
+        st.subheader("📋 سجل البيانات الفني")
+        def style_rows(row):
+            if "🔴" in row['الحالة']: return ['background-color: #800000; color: white'] * len(row)
+            if "🟡" in row['الحالة']: return ['background-color: #856404; color: white'] * len(row)
             return [''] * len(row)
 
         st.dataframe(
-            df_display.drop(columns=['level', 'p'], errors='ignore').style.apply(color_rows, axis=1),
+            df_display.drop(columns=['level', 'p'], errors='ignore').style.apply(style_rows, axis=1),
             use_container_width=True,
             height=400
         )
 
-    dashboard()
-    
+    update_dashboard()
+        
