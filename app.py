@@ -7,10 +7,9 @@ import random
 from datetime import datetime
 
 # 1. إعدادات الصفحة
-st.set_page_config(page_title="نظام طاقة الأنبار - المراقبة الذكية", layout="wide")
+st.set_page_config(page_title="نظام طاقة الأنبار - محاكاة الانهيار", layout="wide")
 
-DB_FILE = "anbar_final_simulation.json"
-MAX_BUFFER = 40 # الحد الأقصى لتراكم البيانات قبل الانهيار الحتمي
+DB_FILE = "anbar_ultimate_sim.json"
 
 # 2. إعدادات المحطات (الرمادي)
 STATIONS = {
@@ -21,8 +20,8 @@ STATIONS = {
     "حي التأميم (سكني)": {"max": 500, "priority": 5}
 }
 
-# --- دوال إدارة البيانات ---
-def load_system():
+# --- دوال إدارة النظام ---
+def load_system_state():
     if not os.path.exists(DB_FILE): 
         return {"entries": [], "load_val": 10, "collapsed": False}
     try:
@@ -31,9 +30,9 @@ def load_system():
     except:
         return {"entries": [], "load_val": 10, "collapsed": False}
 
-def save_system(new_entries, protocol_on, force_collapse=False):
+def save_system_state(new_entries, protocol_on, force_collapse=False):
     try:
-        data = load_system()
+        data = load_system_state()
         if data["collapsed"]: return
         
         if force_collapse:
@@ -42,17 +41,17 @@ def save_system(new_entries, protocol_on, force_collapse=False):
         else:
             data["entries"].extend(new_entries)
             
-            # --- منطق مؤشر الضغط (Server Load) ---
+            # --- منطق مؤشر الضغط الحتمي ---
             if protocol_on:
-                # البروتوكول يفرغ الضغط ويحافظ عليه بين 15% و 35%
-                data["load_val"] = random.randint(15, 35)
-                data["entries"] = data["entries"][-10:] # تفريغ السجل أولاً بأول
+                # البروتوكول يفرغ الضغط ويحافظ عليه تحت 40%
+                data["load_val"] = random.randint(10, 35)
+                data["entries"] = data["entries"][-10:] # تفريغ السجل
             else:
-                # بدون بروتوكول: الضغط يرتفع تدريجياً (+15 لكل دفعة)
-                data["load_val"] += 15
-                data["entries"] = data["entries"][-MAX_BUFFER:] # تراكم البيانات
+                # بدون بروتوكول: الضغط يرتفع حتماً (+20 كل ثانية)
+                data["load_val"] += 20
+                data["entries"] = data["entries"][-30:] # تراكم البيانات
             
-            # التحقق من الانهيار الحتمي
+            # فحص الانهيار عند وصول العداد لـ 100
             if data["load_val"] >= 100:
                 data["load_val"] = 100
                 data["collapsed"] = True
@@ -62,124 +61,122 @@ def save_system(new_entries, protocol_on, force_collapse=False):
     except:
         pass
 
-def create_smooth_reading(name, prev_val):
+def create_random_reading(name):
     limit = STATIONS[name]["max"]
     
-    # تغير تدريجي (بين 50% و 100% من الحمل)
-    # القيمة تتغير بنسبة بسيطة (+/- 3%) عن القيمة السابقة
-    variation = random.uniform(-0.03, 0.03) * limit
-    new_val = prev_val + variation
+    # عشوائية كاملة بين 50% و 100% كما طلبت
+    new_val = random.randint(int(limit * 0.5), int(limit * 1.0))
     
-    # حصر القيمة في النطاق الواقعي الذي طلبته (50% إلى 100%)
-    new_val = max(limit * 0.5, min(new_val, limit * 1.0))
-    
-    # تحديد الحالة (الخطر يظهر فقط فوق 97%)
-    if new_val < (limit * 0.85): status, level = "🟢 مستقر", 1
-    elif (limit * 0.85) <= new_val < (limit * 0.97): status, level = "🟡 تنبيه", 2
-    else: status, level = "🔴 خطر", 3
+    # تحديد الحالة (تقليل ظهور الخطر بجعله فوق 98% فقط)
+    if new_val < (limit * 0.85): 
+        status, level = "🟢 مستقر", 1
+    elif (limit * 0.85) <= new_val < (limit * 0.98): 
+        status, level = "🟡 تنبيه", 2
+    else: 
+        status, level = "🔴 خطر", 3
 
-    return int(new_val), {
-        "المنشأة": name, "التيار (A)": int(new_val), "الحالة": status,
+    return {
+        "المنشأة": name, "التيار (A)": new_val, "الحالة": status,
         "الوقت": datetime.now().strftime("%H:%M:%S"),
         "timestamp": time.time(), "level": level, 
         "priority": STATIONS[name]["priority"], "batch_id": time.time()
     }
 
 # --- القائمة الجانبية ---
-st.sidebar.title("⚡ سيطرة كهرباء الأنبار")
+st.sidebar.title("⚡ مركز سيطرة الرمادي")
 page = st.sidebar.radio("القائمة:", ["🕹️ غرفة التحكم", "🖥️ شاشة المراقبة"])
 protocol_active = st.sidebar.toggle("🛡️ تفعيل بروتوكول الحماية", value=True)
 
-if st.sidebar.button("♻️ إعادة تشغيل (Reset)"):
+if st.sidebar.button("♻️ تصفير النظام (Reset)"):
     if os.path.exists(DB_FILE): os.remove(DB_FILE)
-    st.session_state.clear()
     st.rerun()
 
 # ==========================================
 # الصفحة 1: غرفة التحكم
 # ==========================================
 if page == "🕹️ غرفة التحكم":
-    st.title("🕹️ وحدة التحكم الميدانية")
+    st.title("🕹️ وحدة الإرسال الميداني")
     
-    state = load_system()
+    state = load_system_state()
     if state["collapsed"]:
-        st.error("❌ النظام منهار! يرجى عمل Reset للإصلاح.")
+        st.error("❌ الشبكة منهارة! يرجى عمل Reset من القائمة الجانبية.")
     else:
-        run = st.checkbox("🚀 بدء البث التلقائي (تغير تدريجي)")
+        run = st.checkbox("🚀 تشغيل البث التلقائي (عشوائي)")
         if run:
-            if 'vals' not in st.session_state:
-                st.session_state.vals = {n: STATIONS[n]["max"]*0.7 for n in STATIONS}
-
             placeholder = st.empty()
             while run:
-                if load_system()["collapsed"]: break
+                if load_system_state()["collapsed"]: break
                 
-                batch = []
-                for n in STATIONS:
-                    new_v, log = create_smooth_reading(n, st.session_state.vals[n])
-                    st.session_state.vals[n] = new_v
-                    batch.append(log)
+                batch = [create_random_reading(n) for n in STATIONS]
+                save_system_state(batch, protocol_active)
                 
-                save_system(batch, protocol_active)
                 with placeholder.container():
-                    st.write(f"📡 يتم البث الآن بواقعية... {datetime.now().strftime('%H:%M:%S')}")
+                    st.write(f"📡 جاري ضخ البيانات العشوائية... {datetime.now().strftime('%H:%M:%S')}")
                 time.sleep(1)
         
         st.write("---")
-        st.write("🔧 التحكم اليدوي (عن طريق الشريط):")
+        st.write("🔧 التحكم اليدوي المباشر:")
         for name in STATIONS:
-            val = st.slider(f"{name}", 0, 1500, value=int(STATIONS[name]["max"]*0.75), key=name)
+            val = st.slider(f"{name}", 0, 1500, value=int(STATIONS[name]["max"]*0.6), key=name)
             if st.session_state.get(f"m_{name}") != val:
-                save_system([create_smooth_reading(name, val)[1]], protocol_active)
+                # محاكاة إرسال قيمة يدوية
+                limit = STATIONS[name]["max"]
+                if val < (limit * 0.85): s, l = "🟢 مستقر", 1
+                elif (limit * 0.85) <= val < (limit * 0.98): s, l = "🟡 تنبيه", 2
+                else: s, l = "🔴 خطر", 3
+                
+                save_system_state([{
+                    "المنشأة": name, "التيار (A)": val, "الحالة": s,
+                    "الوقت": datetime.now().strftime("%H:%M:%S"),
+                    "timestamp": time.time(), "level": l, "priority": STATIONS[name]["priority"], "batch_id": time.time()
+                }], protocol_active)
                 st.session_state[f"m_{name}"] = val
 
 # ==========================================
 # الصفحة 2: شاشة المراقبة
 # ==========================================
 else:
-    st.title("🖥️ مركز مراقبة محطات الرمادي")
+    st.title("🖥️ شاشة مراقبة أحمال الرمادي")
     
     placeholder = st.empty()
     while True:
-        state = load_system()
+        state = load_system_state()
         entries = state["entries"]
         is_collapsed = state["collapsed"]
-        load_pct = state["load_val"]
+        current_load = state["load_val"]
         
         with placeholder.container():
             if is_collapsed:
                 st.markdown("""
-                <div style='background-color:black; padding:50px; border: 10px solid red; text-align:center;'>
+                <div style='background-color:black; padding:50px; border: 15px solid red; text-align:center;'>
                     <h1 style='color:red; font-size: 80px;'>⚠️ SYSTEM FAILURE ⚠️</h1>
-                    <h2 style='color:white;'>انهيار الشبكة - تجاوز حد الضغط 100%</h2>
+                    <h2 style='color:white;'>انهيار السيرفر - الضغط تجاوز 100%</h2>
+                    <p style='color:yellow;'>السبب: تدفق بيانات عشوائي مكثف بدون حماية.</p>
                 </div>
                 """, unsafe_allow_html=True)
-                
                 break
 
             if not entries:
-                st.info("بانتظار وصول البيانات...")
+                st.info("بانتظار البيانات... شغل البث من غرفة التحكم.")
             else:
-                # 2. مؤشر الضغط (Server Load)
-                color = "green" if protocol_active else "red"
-                st.markdown(f"### مؤشر ضغط البيانات: :{color}[{load_pct}%]")
-                st.progress(min(load_pct, 100) / 100)
+                # عرض مؤشر الضغط الحتمي
+                p_color = "green" if protocol_active else "red"
+                st.markdown(f"### مؤشر ضغط السيرفر: :{p_color}[{current_load}%]")
+                st.progress(min(current_load, 100) / 100)
 
                 df = pd.DataFrame(entries)
                 
                 if protocol_active:
-                    # البروتوكول يفرز ويحمي (المستشفى والخطر في الأعلى)
                     df_display = df.sort_values(by=["level", "priority", "timestamp"], ascending=[False, True, False])
-                    st.success("✅ البروتوكول فعال: الضغط تحت السيطرة (دائماً < 40%).")
+                    st.success("✅ البروتوكول فعال: الضغط مستقر (دائماً < 40%).")
                 else:
                     df_display = df.sort_values(by="timestamp", ascending=False)
-                    st.warning("⚠️ تحذير: البروتوكول معطل! الضغط يرتفع بشكل خطير.")
+                    st.warning("⚠️ تحذير: البروتوكول معطل! السيرفر يقترب من الانهيار.")
 
-                # الرسم البياني الواقعي
-                st.subheader("📊 مخطط توزيع الأحمال (Live Trend)")
+                # الرسم البياني العشوائي
+                st.subheader("📊 مخطط الأحمال اللحظي (عشوائي)")
                 chart_df = df.pivot_table(index='الوقت', columns='المنشأة', values='التيار (A)').ffill()
                 st.line_chart(chart_df, height=250)
-                
 
                 # الجدول الملون
                 def style_func(row):
