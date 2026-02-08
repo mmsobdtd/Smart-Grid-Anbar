@@ -7,9 +7,10 @@ import random
 from datetime import datetime
 
 # إعدادات الصفحة
-st.set_page_config(page_title="نظام مراقبة طاقة الأنبار - الإصدار الاحترافي", layout="wide")
+st.set_page_config(page_title="نظام طاقة الأنبار - سجل البيانات اللحظي", layout="wide")
 
-DB_FILE = "grid_final_v3.json"
+# اسم ملف قاعدة البيانات
+DB_FILE = "grid_database_v4.json"
 
 # --- 1. إعدادات المنشآت ---
 LOCATIONS_CONFIG = {
@@ -19,17 +20,23 @@ LOCATIONS_CONFIG = {
     "حي التأميم (المغذي الرئيسي)": {"avg": 300, "priority": 7}
 }
 
+# دالة تحميل البيانات
 def load_data():
-    if not os.path.exists(DB_FILE): return []
+    if not os.path.exists(DB_FILE):
+        return []
     try:
         with open(DB_FILE, "r") as f:
-            return json.load(f)
-    except: return []
+            content = f.read()
+            if not content: return []
+            return json.loads(content)
+    except:
+        return []
 
+# دالة حفظ البيانات
 def save_entries_batch(entries):
     history = load_data()
     history.extend(entries)
-    # الاحتفاظ بآخر 100 سجل لعرض التاريخ الكامل
+    # الحفاظ على آخر 100 سجل لضمان سرعة الواجهة
     with open(DB_FILE, "w") as f:
         json.dump(history[-100:], f)
 
@@ -48,102 +55,104 @@ def create_entry(name, current):
         "المتوسط": avg,
         "الحالة": status,
         "الوقت": datetime.now().strftime("%H:%M:%S"),
-        "timestamp": time.time(), # للترتيب الزمني الدقيق
+        "timestamp": time.time(),
         "level": level
     }
 
-# --- 2. التنقل الجانبي ---
+# --- 2. القائمة الجانبية ---
 st.sidebar.title("📑 قائمة النظام")
 page = st.sidebar.radio("انتقل إلى:", ["🕹️ لوحة التحكم", "🖥️ شاشة المراقبة"])
 
 st.sidebar.markdown("---")
 protocol_active = st.sidebar.toggle("تفعيل البروتوكول الذكي", value=True)
 
-if st.sidebar.button("🗑️ مسح السجلات"):
-    if os.path.exists(DB_FILE): os.remove(DB_FILE)
+if st.sidebar.button("🗑️ مسح سجل البيانات"):
+    if os.path.exists(DB_FILE):
+        os.remove(DB_FILE)
+    st.success("تم مسح السجل بنجاح")
     st.rerun()
 
-# --- 3. الصفحة الأولى: لوحة التحكم ---
+# --- 3. الصفحة الأولى: لوحة التحكم (إرسال البيانات) ---
 if page == "🕹️ لوحة التحكم":
-    st.title("🕹️ وحدة التحكم والإرسال")
+    st.title("🕹️ وحدة التحكم وإرسال البيانات")
+    st.info("ملاحظة: البيانات التي ترسلها هنا ستظهر في 'شاشة المراقبة'.")
     
-    input_mode = st.selectbox("نمط العمل:", ["تلقائي (إرسال جماعي 4 مواقع)", "يدوي"])
+    input_mode = st.selectbox("نمط العمل:", ["تلقائي (4 مواقع معاً)", "يدوي"])
     
-    if input_mode == "تلقائي (إرسال جماعي 4 مواقع)":
-        run_auto = st.toggle("🚀 بدء البث الجماعي (1 ثانية)", value=False)
-        
+    if input_mode == "تلقائي (4 مواقع معاً)":
+        run_auto = st.toggle("🚀 بدء البث الجماعي (كل 1 ثانية)", value=False)
         if run_auto:
-            st.success("📡 البث الجماعي نشط: يتم إرسال 4 قراءات معاً كل ثانية.")
+            st.success("📡 البث نشط الآن... اذهب إلى صفحة المراقبة لرؤية السجل.")
             placeholder = st.empty()
             while run_auto:
                 batch = []
                 for name in LOCATIONS_CONFIG.keys():
                     avg = LOCATIONS_CONFIG[name]["avg"]
-                    # محاكاة تذبذب (أحياناً طبيعي وأحياناً خطر)
                     val = random.randint(int(avg*0.6), int(avg*1.6))
                     batch.append(create_entry(name, val))
                 
                 save_entries_batch(batch)
                 
                 with placeholder.container():
-                    st.write(f"✅ تم بث نبضة بيانات شاملة عند: {datetime.now().strftime('%H:%M:%S')}")
-                    cols = st.columns(4)
-                    for i, entry in enumerate(batch):
-                        cols[i].metric(entry['المنشأة'], f"{entry['التيار (A)']}A")
+                    st.write(f"✅ نبضة بيانات شاملة مرسلة عند: {datetime.now().strftime('%H:%M:%S')}")
                 
                 time.sleep(1)
                 st.rerun()
     else:
         st.subheader("🎛️ التحكم اليدوي")
-        cols = st.columns(2)
-        for i, loc in enumerate(LOCATIONS_CONFIG.keys()):
-            with cols[i % 2]:
-                val = st.slider(f"تيار {loc}:", 0, 800, value=LOCATIONS_CONFIG[loc]["avg"], key=loc)
-                if st.session_state.get(f"prev_{loc}") != val:
-                    save_entries_batch([create_entry(loc, val)])
-                    st.session_state[f"prev_{loc}"] = val
+        for loc in LOCATIONS_CONFIG.keys():
+            val = st.slider(f"تيار {loc}:", 0, 800, value=LOCATIONS_CONFIG[loc]["avg"], key=loc)
+            if st.session_state.get(f"prev_{loc}") != val:
+                save_entries_batch([create_entry(loc, val)])
+                st.session_state[f"prev_{loc}"] = val
 
-# --- 4. الصفحة الثانية: شاشة المراقبة ---
+# --- 4. الصفحة الثانية: شاشة المراقبة (عرض السجل) ---
 else:
     st.title("🖥️ مركز المراقبة والتحليل اللحظي")
+    st.markdown("---")
 
+    # تحديث البيانات تلقائياً كل ثانية لمواكبة البث
     @st.fragment(run_every="1s")
-    def show_monitoring():
+    def display_monitoring_data():
         data = load_data()
+        
         if not data:
-            st.warning("بانتظار البيانات... (يرجى تفعيل البث من لوحة التحكم)")
+            st.warning("⚠️ لا يوجد سجل بيانات حتى الآن. يرجى الذهاب إلى 'لوحة التحكم' وبدء الإرسال.")
             return
 
         df = pd.DataFrame(data)
 
-        # منطق الفرز (البروتوكول الذكي)
+        # منطق الفرز (البروتوكول)
         if protocol_active:
-            st.success("✅ البروتوكول فعال: يتم عرض التاريخ كاملاً مع رفع الأخطار للأعلى")
-            # الترتيب: 1. حسب مستوى الخطر (الأحمر أولاً) 2. حسب الوقت (الأحدث أولاً)
-            # هذا يضمن ظهور كل البيانات، لكن الخطر يكون دائماً في القمة
+            # ترتيب: الخطر (level 3) أولاً، ثم الوقت الأحدث
             df_display = df.sort_values(by=["level", "timestamp"], ascending=[False, False])
         else:
-            st.error("🚨 بدون بروتوكول: عرض تسلسلي زمني فقط")
+            # ترتيب زمني بسيط (الأحدث فوق)
             df_display = df.sort_values(by="timestamp", ascending=False)
 
         # أ. الرسم البياني
-        st.subheader("📊 المخطط الزمني لتطور الأحمال")
+        st.subheader("📊 المخطط البياني للأحمال")
         chart_df = df.pivot_table(index='الوقت', columns='المنشأة', values='التيار (A)').ffill()
         st.line_chart(chart_df, height=300)
 
-        # ب. الجدول المطور
-        st.subheader("📋 سجل البيانات الكامل (Full History Log)")
+        [attachment_0](attachment)
+
+        # ب. سجل البيانات (الجدول) - تأكيد ظهوره
+        st.subheader("📋 سجل البيانات الكامل (Data Log)")
         
-        def color_logic(row):
-            if row['level'] == 3: return ['background-color: #800000; color: white; font-weight: bold'] * len(row)
-            if row['level'] == 2: return ['background-color: #705d00; color: white'] * len(row)
+        def apply_styles(row):
+            if row['level'] == 3: # خطر
+                return ['background-color: #800000; color: white; font-weight: bold'] * len(row)
+            if row['level'] == 2: # تنبيه
+                return ['background-color: #705d00; color: white'] * len(row)
             return [''] * len(row)
 
+        # عرض الجدول بشكل رسمي وواضح
         st.dataframe(
-            df_display.drop(columns=['level', 'timestamp', 'المتوسط'], errors='ignore').style.apply(color_logic, axis=1),
+            df_display.drop(columns=['level', 'timestamp', 'المتوسط'], errors='ignore').style.apply(apply_styles, axis=1),
             use_container_width=True,
             height=500
         )
 
-    show_monitoring()
-        
+    display_monitoring_data()
+    
