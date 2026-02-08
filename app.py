@@ -9,7 +9,7 @@ from datetime import datetime
 # إعدادات الصفحة الرسمية
 st.set_page_config(page_title="نظام مراقبة الطاقة الذكي - الأنبار", layout="wide")
 
-DB_FILE = "anbar_final_grid.json"
+DB_FILE = "anbar_auto_grid.json"
 
 # --- إعدادات المنشآت والمتوسطات المرجعية ---
 LOCATIONS_CONFIG = {
@@ -31,7 +31,6 @@ def save_entry(name, current):
     history = load_data()
     avg = LOCATIONS_CONFIG[name]["avg"]
     
-    # منطق تصنيف الحالة بناءً على المتوسط
     if current < avg:
         status, level = "🟢 مستقر (Normal)", 1
     elif avg <= current < (avg * 1.2):
@@ -44,56 +43,56 @@ def save_entry(name, current):
         "التيار (A)": current,
         "المتوسط": avg,
         "الحالة": status,
-        "الوقت": datetime.now().strftime("%H:%M:%S.%f")[:-1], # توقيت دقيق
+        "الوقت": datetime.now().strftime("%H:%M:%S.%f")[:-1],
         "level": level,
         "p": LOCATIONS_CONFIG[name]["priority"]
     }
     history.append(entry)
-    # الحفاظ على آخر 50 سجل ليكون الرسم البياني نظيفاً وغير مزدحم
     with open(DB_FILE, "w") as f:
         json.dump(history[-50:], f)
 
-# --- واجهة المستخدم الرئيسية ---
+# --- واجهة المستخدم ---
 st.title("🖥️ مركز التحكم والسيطرة الوطني - الأنبار")
 st.markdown("---")
 
-# تقسيم الشاشة إلى قائمة جانبية ومساحة عرض
 with st.sidebar:
     st.header("🛂 إعدادات النظام")
     input_mode = st.radio("وضع الإدخال:", ["تلقائي (بث فائق السرعة)", "يدوي (تحكم لحظي)"])
-    protocol_mode = st.toggle("تفعيل الفرز الذكي (Priority)", value=True)
+    protocol_mode = st.sidebar.toggle("تفعيل الفرز الذكي (Priority)", value=True)
     st.markdown("---")
     if st.button("🗑️ مسح السجلات"):
         if os.path.exists(DB_FILE): os.remove(DB_FILE)
         st.rerun()
 
-# إنشاء أعمدة لعرض البيانات (إدخال ومراقبة)
 col_input, col_monitor = st.columns([1, 2], gap="large")
 
-# --- 1. قسم الإدخال ---
+# --- 1. قسم الإدخال (التشغيل التلقائي) ---
 with col_input:
     st.subheader("📥 بوابة البيانات")
     
     if input_mode == "تلقائي (بث فائق السرعة)":
-        run_auto = st.checkbox("بدء المحاكاة (0.5 ثانية لكل عنصر)")
-        if run_auto:
-            placeholder = st.empty()
-            # مصفوفة للمواقع لضمان التحديث الدوري لكل واحد
-            locations = list(LOCATIONS_CONFIG.keys())
-            idx = 0
-            while True:
-                name = locations[idx % len(locations)]
-                avg = LOCATIONS_CONFIG[name]["avg"]
-                val = random.randint(int(avg*0.8), int(avg*1.4))
-                save_entry(name, val)
-                
-                with placeholder.container():
-                    st.success(f"📡 بث حي: {name}")
-                    st.metric(label="الحمل الحالي", value=f"{val} A", delta=f"{val-avg} vs Avg")
-                
-                idx += 1
-                time.sleep(0.5) # التحديث كل نصف ثانية كما طلبت
-                st.rerun()
+        st.success("✅ البث التلقائي نشط الآن (0.5 ثانية)")
+        
+        # مصفوفة للمواقع للتحديث الدوري
+        locations = list(LOCATIONS_CONFIG.keys())
+        # استخدام session_state للحفاظ على العداد عند إعادة التشغيل
+        if 'idx' not in st.session_state:
+            st.session_state.idx = 0
+            
+        name = locations[st.session_state.idx % len(locations)]
+        avg = LOCATIONS_CONFIG[name]["avg"]
+        val = random.randint(int(avg*0.8), int(avg*1.4))
+        
+        save_entry(name, val)
+        st.session_state.idx += 1
+        
+        # عرض المقياس الحالي
+        st.metric(label=f"بث حي: {name}", value=f"{val} A", delta=f"{val-avg} vs Avg")
+        
+        # التحديث التلقائي الفوري
+        time.sleep(0.5)
+        st.rerun()
+
     else:
         st.write("حرك المنزلق للإرسال الفوري:")
         for loc_name in LOCATIONS_CONFIG.keys():
@@ -110,23 +109,20 @@ with col_monitor:
     def update_dashboard():
         data = load_data()
         if not data:
-            st.info("بانتظار استقبال الإشارات من الحقل...")
+            st.info("بانتظار البيانات...")
             return
 
         df = pd.DataFrame(data)
 
-        # ترتيب البيانات حسب البروتوكول
         if protocol_mode:
             df_display = df.sort_values(by=["level", "p"], ascending=[False, False])
         else:
             df_display = df.iloc[::-1]
 
-        # الرسم البياني (تم تحسينه ليكون أكثر وضوحاً)
         chart_df = df.pivot_table(index='الوقت', columns='المنشأة', values='التيار (A)').ffill()
         st.line_chart(chart_df, height=300)
 
-        # جدول البيانات الرسمي بتنسيق أنيق
-        st.markdown("##### 📋 سجل تدفق البيانات (Data Packets Log)")
+        st.markdown("##### 📋 سجل تدفق البيانات")
         
         def highlight_status(row):
             if "🔴" in row['الحالة']: return ['background-color: #7b0000; color: white'] * len(row)
@@ -140,4 +136,4 @@ with col_monitor:
         )
 
     update_dashboard()
-        
+    
