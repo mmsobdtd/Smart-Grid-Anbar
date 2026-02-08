@@ -6,139 +6,120 @@ import time
 import random
 from datetime import datetime
 
-# إعدادات الصفحة الرسمية
-st.set_page_config(page_title="نظام طاقة الأنبار - الإصدار الاحترافي", layout="wide")
+# إعداد الصفحة - يجب أن يكون أول أمر
+st.set_page_config(page_title="نظام طاقة الأنبار", layout="wide")
 
-DB_FILE = "grid_final_v5.json"
+DB_FILE = "data_storage.json"
 
-# --- 1. إعدادات المنشآت والمتوسطات المرجعية ---
-LOCATIONS_CONFIG = {
+# إعدادات المنشآت
+LOCATIONS = {
     "مستشفى الرمادي التعليمي": {"avg": 400, "priority": 10},
     "معمل زجاج الرمادي": {"avg": 500, "priority": 10},
     "جامعة الأنبار (المجمع)": {"avg": 350, "priority": 8},
     "حي التأميم (المغذي الرئيسي)": {"avg": 300, "priority": 7}
 }
 
-def load_data():
-    if not os.path.exists(DB_FILE):
-        return []
+# دالات البيانات
+def load_grid_data():
+    if not os.path.exists(DB_FILE): return []
     try:
         with open(DB_FILE, "r") as f:
-            content = f.read()
-            if not content: return []
-            return json.loads(content)
-    except:
-        return []
+            data = json.load(f)
+            return data if isinstance(data, list) else []
+    except: return []
 
-def save_entries_batch(entries):
-    history = load_data()
-    history.extend(entries)
+def save_grid_data(new_entries):
+    history = load_grid_data()
+    history.extend(new_entries)
     with open(DB_FILE, "w") as f:
-        json.dump(history[-100:], f)
+        json.dump(history[-60:], f) # حفظ آخر 60 سجل فقط للسلاسة
 
-def create_entry(name, current):
-    avg = LOCATIONS_CONFIG[name]["avg"]
-    if current < avg:
-        status, level = "🟢 مستقر", 1
-    elif avg <= current < (avg * 1.2):
-        status, level = "🟡 تنبيه", 2
-    else:
-        status, level = "🔴 خطر (حمل زائد)", 3
-
+def create_log(name, current):
+    avg = LOCATIONS[name]["avg"]
+    if current < avg: status, level = "🟢 مستقر", 1
+    elif avg <= current < (avg * 1.2): status, level = "🟡 تنبيه", 2
+    else: status, level = "🔴 خطر", 3
     return {
-        "المنشأة": name,
-        "التيار (A)": current,
-        "المتوسط": avg,
-        "الحالة": status,
+        "المنشأة": name, "التيار (A)": current, "الحالة": status,
         "الوقت": datetime.now().strftime("%H:%M:%S"),
-        "timestamp": time.time(),
-        "level": level
+        "ts": time.time(), "level": level, "p": LOCATIONS[name]["priority"]
     }
 
-# --- 2. القائمة الجانبية (Navigation) ---
-st.sidebar.title("📑 قائمة النظام")
-page = st.sidebar.radio("انتقل إلى:", ["🕹️ لوحة التحكم", "🖥️ شاشة المراقبة"])
+# --- القائمة الجانبية ---
+st.sidebar.title("🛂 تحكم النظام")
+page = st.sidebar.selectbox("القائمة:", ["🕹️ لوحة التحكم", "🖥️ شاشة المراقبة"])
+protocol = st.sidebar.toggle("تفعيل البروتوكول الذكي", value=True)
 
-st.sidebar.markdown("---")
-protocol_active = st.sidebar.toggle("تفعيل البروتوكول الذكي", value=True)
-
-if st.sidebar.button("🗑️ مسح السجلات"):
-    if os.path.exists(DB_FILE):
-        os.remove(DB_FILE)
+if st.sidebar.button("🗑️ مسح السجل"):
+    if os.path.exists(DB_FILE): os.remove(DB_FILE)
     st.rerun()
 
-# --- 3. الصفحة الأولى: لوحة التحكم ---
+# --- الصفحة 1: لوحة التحكم ---
 if page == "🕹️ لوحة التحكم":
-    st.title("🕹️ وحدة التحكم وإرسال البيانات")
+    st.title("🕹️ وحدة الإرسال والتحكم")
     
-    input_mode = st.selectbox("نمط العمل:", ["تلقائي (بث جماعي كل ثانية)", "يدوي"])
+    mode = st.radio("نمط الإرسال:", ["تلقائي (كل 1 ثانية)", "يدوي"])
     
-    if input_mode == "تلقائي (بث جماعي كل ثانية)":
-        run_auto = st.toggle("🚀 بدء البث التلقائي (4 مواقع معاً)", value=False)
-        if run_auto:
-            st.success("📡 البث نشط الآن... القراءات تُرسل كل 1 ثانية.")
-            placeholder = st.empty()
-            while run_auto:
-                batch = []
-                for name in LOCATIONS_CONFIG.keys():
-                    avg = LOCATIONS_CONFIG[name]["avg"]
-                    val = random.randint(int(avg*0.6), int(avg*1.6))
-                    batch.append(create_entry(name, val))
-                
-                save_entries_batch(batch)
-                with placeholder.container():
-                    st.write(f"✅ تم إرسال نبضة بيانات عند: {datetime.now().strftime('%H:%M:%S')}")
-                
-                time.sleep(1)
-                st.rerun()
+    if mode == "تلقائي (كل 1 ثانية)":
+        active = st.toggle("🚀 تشغيل البث الجماعي")
+        if active:
+            st.success("📡 البث نشط... يتم إرسال قراءات المواقع الأربعة معاً.")
+            # إرسال البيانات
+            batch = []
+            for name in LOCATIONS.keys():
+                val = random.randint(int(LOCATIONS[name]["avg"]*0.7), int(LOCATIONS[name]["avg"]*1.5))
+                batch.append(create_log(name, val))
+            save_grid_data(batch)
+            # انتظار ثانية واحدة ثم إعادة التشغيل لعمل نبضة جديدة
+            time.sleep(1)
+            st.rerun()
     else:
-        st.subheader("🎛️ التحكم اليدوي")
-        for loc in LOCATIONS_CONFIG.keys():
-            val = st.slider(f"تيار {loc}:", 0, 800, value=LOCATIONS_CONFIG[loc]["avg"], key=loc)
-            if st.session_state.get(f"prev_{loc}") != val:
-                save_entries_batch([create_entry(loc, val)])
-                st.session_state[f"prev_{loc}"] = val
+        st.subheader("🎛️ إدخال يدوي")
+        cols = st.columns(2)
+        for i, name in enumerate(LOCATIONS.keys()):
+            val = cols[i%2].slider(f"{name}", 0, 800, value=LOCATIONS[name]["avg"])
+            if st.session_state.get(f"v_{name}") != val:
+                save_grid_data([create_log(name, val)])
+                st.session_state[f"v_{name}"] = val
 
-# --- 4. الصفحة الثانية: شاشة المراقبة ---
+# --- الصفحة 2: شاشة المراقبة ---
 else:
-    st.title("🖥️ مركز المراقبة والتحليل اللحظي")
-
-    @st.fragment(run_every="1s")
-    def display_monitoring():
-        data = load_data()
-        if not data:
-            st.warning("⚠️ لا توجد بيانات. ابدأ البث من لوحة التحكم.")
-            return
-
+    st.title("🖥️ شاشة المراقبة والتحليل")
+    
+    # تحديث تلقائي للجزء السفلي فقط كل ثانية
+    container = st.container()
+    
+    data = load_grid_data()
+    if not data:
+        st.warning("⚠️ لا توجد بيانات. ابدأ البث من لوحة التحكم.")
+    else:
         df = pd.DataFrame(data)
-
-        if protocol_active:
-            # البروتوكول الذكي: الخطر أولاً ثم الوقت الأحدث
-            df_display = df.sort_values(by=["level", "timestamp"], ascending=[False, False])
-        else:
-            # بدون بروتوكول: ترتيب زمني فقط
-            df_display = df.sort_values(by="timestamp", ascending=False)
-
-        # الرسم البياني
-        st.subheader("📊 المخطط البياني للأحمال")
-        chart_df = df.pivot_table(index='الوقت', columns='المنشأة', values='التيار (A)').ffill()
-        st.line_chart(chart_df, height=300)
-
-        # جدول البيانات
-        st.subheader("📋 سجل البيانات الكامل")
         
-        def apply_styles(row):
-            if row['level'] == 3:
-                return ['background-color: #800000; color: white; font-weight: bold'] * len(row)
-            if row['level'] == 2:
-                return ['background-color: #705d00; color: white'] * len(row)
+        # الرسم البياني
+        st.subheader("📊 مخطط الأحمال اللحظي")
+        chart_df = df.pivot_table(index='الوقت', columns='المنشأة', values='التيار (A)').ffill()
+        st.line_chart(chart_df)
+
+        # البروتوكول (الترتيب)
+        if protocol:
+            # يظهر كل شيء، لكن الخطر (level 3) يصعد للأعلى
+            df_display = df.sort_values(by=["level", "ts"], ascending=[False, False])
+        else:
+            df_display = df.sort_values(by="ts", ascending=False)
+
+        # الجدول
+        st.subheader("📋 سجل البيانات المستلمة")
+        def style_df(row):
+            if "🔴" in row['الحالة']: return ['background-color: #800000; color: white'] * len(row)
+            if "🟡" in row['الحالة']: return ['background-color: #705d00; color: white'] * len(row)
             return [''] * len(row)
 
         st.dataframe(
-            df_display.drop(columns=['level', 'timestamp', 'المتوسط'], errors='ignore').style.apply(apply_styles, axis=1),
-            use_container_width=True,
-            height=450
+            df_display.drop(columns=['ts', 'level', 'p'], errors='ignore').style.apply(style_df, axis=1),
+            use_container_width=True
         )
-
-    display_monitoring()
-                    
+        
+        # زر تحديث يدوي أو تركه يحدث مع البث
+        time.sleep(1)
+        st.rerun()
+            
