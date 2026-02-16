@@ -3,104 +3,121 @@ import pandas as pd
 import numpy as np
 import time
 from datetime import datetime
+import base64
 
 # إعدادات الصفحة
-st.set_page_config(page_title="Anbar Smart Grid - Protection System", layout="wide")
+st.set_page_config(page_title="Anbar Grid Control Room", layout="wide")
 
-# --- تهيئة الحالة (Session State) ---
-if 'system_active' not in st.session_state:
-    st.session_state.system_active = True
-if 'is_tripped' not in st.session_state:
-    st.session_state.is_tripped = False
-if 'trip_reason' not in st.session_state:
-    st.session_state.trip_reason = ""
+# --- دالة تشغيل صوت الإنذار ---
+def play_alarm():
+    # صوت إنذار قصير (Base64)
+    sound_html = f"""
+        <audio autoplay>
+            <source src="https://www.soundjay.com/buttons/beep-01a.mp3" type="audio/mpeg">
+        </audio>
+    """
+    st.components.v1.html(sound_html, height=0)
 
-# --- العنوان والشعار ---
-st.title("⚡ نظام حماية ومراقبة أحمال الأنبار الذكي")
-st.markdown(f"**إعداد المهندس:** محمد نبيل | **الحالة الآن:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+# --- تهيئة البيانات (Session State) ---
+if 'transformers' not in st.session_state:
+    st.session_state.transformers = {
+        f"محولة {i}": {"active": True, "reason": "", "history": []} for i in range(1, 5)
+    }
 
-# --- القائمة الجانبية للإعدادات (Thresholds) ---
-st.sidebar.header("⚙️ إعدادات الحماية (Protection Thresholds)")
-max_current = st.sidebar.slider("الحد الأقصى للتيار (Amps)", 50, 200, 150)
-max_temp = st.sidebar.slider("درجة الحرارة الحرجة (C°)", 40, 100, 85)
-wire_resistance = st.sidebar.number_input("مقاومة الأسلاك (Ohm)", value=0.05)
+# --- العنوان ---
+st.title("📟 غرفة تحكم أحمال الأنبار الذكية")
+st.markdown(f"**إشراف المهندس:** محمد نبيل | **التاريخ:** {datetime.now().strftime('%Y-%m-%d')}")
 
-if st.sidebar.button("إعادة تشغيل المنظومة (Reset System)"):
-    st.session_state.is_tripped = False
-    st.session_state.system_active = True
-    st.session_state.trip_reason = ""
+# --- القائمة الجانبية (Sidebar) ---
+st.sidebar.header("🕹️ لوحة التحكم بالنظام")
+protocol_mode = st.sidebar.toggle("تفعيل بروتوكول الحماية الذكي", value=True)
+st.sidebar.divider()
+max_temp = st.sidebar.slider("حد الحرارة الأقصى (C°)", 50, 100, 80)
+max_load_pct = 90 # نسبة الفصل 90% كما طلبت
 
-# --- محاكاة البيانات (Data Simulation) ---
-def get_live_data():
-    # محاكاة قراءات الحساسات (PZEM-004T + DS18B20)
-    voltage = np.random.uniform(210, 230)
-    # رفع التيار والحرارة تدريجياً للمحاكاة
-    current = np.random.uniform(80, 160) if st.session_state.system_active else 0
-    temp = np.random.uniform(40, 95) if st.session_state.system_active else 30
-    pf = 0.85 # Power Factor
-    power = voltage * current * pf / 1000 # kW
-    losses = (current**2 * wire_resistance) / 1000 # kW
+if st.sidebar.button("إعادة تشغيل كافة المحولات"):
+    for t in st.session_state.transformers:
+        st.session_state.transformers[t]["active"] = True
+        st.session_state.transformers[t]["reason"] = ""
+
+# --- معالجة البيانات ---
+station_data = []
+
+# عرض المحولات بشكل كروت (Cards) سريعة
+cols = st.columns(4)
+
+for idx, (name, state) in enumerate(st.session_state.transformers.items()):
+    # توليد قراءات عشوائية (محاكاة للحساسات)
+    voltage = np.random.uniform(215, 225)
+    current = np.random.uniform(50, 150) if state["active"] else 0
+    temp = np.random.uniform(40, 95) if state["active"] else 30
+    resistance = 0.05
+    losses = (current**2 * resistance) / 1000 # حساب الخسائر بالـ kW
     
-    return voltage, current, temp, power, losses
-
-v, i, t, p, loss = get_live_data()
-
-# --- منطق الفصل الآلي (Automatic Tripping Logic) ---
-if st.session_state.system_active:
-    if i > max_current:
-        st.session_state.is_tripped = True
-        st.session_state.system_active = False
-        st.session_state.trip_reason = f"Overload Detected: {i:.1f} Amps"
-    elif t > max_temp:
-        st.session_state.is_tripped = True
-        st.session_state.system_active = False
-        st.session_state.trip_reason = f"Critical Overheating: {t:.1f}°C"
-
-# --- عرض لوحة التحكم (Dashboard Display) ---
-if st.session_state.is_tripped:
-    st.error(f"🚨 تم فصل المنظومة آلياً (SYSTEM TRIPPED)! السبب: {st.session_state.trip_reason}")
-else:
-    st.success("✅ المنظومة تعمل بشكل طبيعي")
-
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    st.metric("الجهد (Voltage)", f"{v:.1f} V")
-with col2:
-    color = "normal" if i < max_current * 0.8 else "inverse"
-    st.metric("التيار (Current)", f"{i:.1f} A", delta=f"{i-max_current:.1f} Limit", delta_color=color)
-with col3:
-    st.metric("درجة الحرارة (Temp)", f"{t:.1f} °C")
-with col4:
-    st.metric("الضياعات (Power Losses)", f"{loss:.3f} kW")
-
-# --- الرسوم البيانية ---
-st.divider()
-st.subheader("📊 تحليل الاستهلاك والضياعات في الوقت الفعلي")
-
-# إنشاء بيانات تاريخية للمحاكاة
-chart_data = pd.DataFrame(
-    np.random.randn(20, 2) / [10, 5] + [p, loss],
-    columns=['القدرة الفعلية (kW)', 'الضياعات الفنية (kW)']
-)
-
-st.line_chart(chart_data)
-
-# --- قسم التنبؤ (Predictive Maintenance Section) ---
-st.divider()
-st.subheader("🔮 التحليل التنبؤي للأعطال")
-risk_level = (t / max_temp) * 100
-if risk_level < 70:
-    st.info(f"مستوى الخطر الحالي: {risk_level:.1f}% - المحول في حالة ممتازة.")
-elif risk_level < 90:
-    st.warning(f"مستوى الخطر: {risk_level:.1f}% - يُنصح بموازنة الأحمال قريباً.")
-else:
-    st.error(f"مستوى الخطر: {risk_level:.1f}% - خطر انفجار أو تلف وشيك!")
-
-# زر الطوارئ اليدوي
-if not st.session_state.is_tripped:
-    if st.button("🔴 فصل اضطراري يدوي (Manual Emergency Stop)", use_container_width=True):
-        st.session_state.is_tripped = True
-        st.session_state.system_active = False
-        st.session_state.trip_reason = "Manual Emergency Shutdown"
+    load_pct = (current / 150) * 100 # نسبة الحمل بالنسبة لـ 150 أمبير كحد أقصى
+    
+    # منطق البروتوكول (الفصل الآلي)
+    status = "طبيعي ✅"
+    if state["active"]:
+        if protocol_mode:
+            if load_pct >= max_load_pct:
+                state["active"] = False
+                state["reason"] = f"فصل حمل زائد ({load_pct:.1f}%)"
+                play_alarm()
+            elif temp >= max_temp:
+                state["active"] = False
+                state["reason"] = f"فصل حرارة عالية ({temp:.1f}°C)"
+                play_alarm()
         
+        if load_pct >= 80: status = "تحذير ⚠️"
+        if load_pct >= 90: status = "خطر 🚩"
+    else:
+        status = "فصل (TRIPPED) ❌"
+
+    # إضافة البيانات للجدول
+    station_data.append({
+        "المحطة": name,
+        "الجهد (V)": f"{voltage:.1f}",
+        "التيار (A)": f"{current:.1f}",
+        "الحرارة (C°)": f"{temp:.1f}",
+        "الخسائر (kW)": f"{losses:.3f}",
+        "الحمل": f"{load_pct:.1f}%",
+        "الحالة": status,
+        "سبب الفصل": state["reason"]
+    })
+
+    # عرض شريط الضغط (Stress Bar) في الكروت
+    with cols[idx]:
+        st.subheader(name)
+        st.metric("الحمل الحالي", f"{load_pct:.1f}%")
+        st.progress(min(load_pct/100, 1.0)) # شريط الضغط
+        if not state["active"]:
+            st.error(f"انفصلت: {state['reason']}")
+
+# --- عرض الجدول القديم المطور ---
+st.divider()
+st.subheader("📋 جدول القراءات اللحظية المرسل لغرفة التحكم")
+df = pd.DataFrame(station_data)
+
+# تنسيق الجدول ليظهر الألوان
+def color_status(val):
+    color = 'white'
+    if 'خطر' in val or 'فصل' in val: color = '#ff4b4b'
+    elif 'تحذير' in val: color = '#ffa500'
+    elif 'طبيعي' in val: color = '#28a745'
+    return f'background-color: {color}'
+
+st.dataframe(df.style.applymap(color_status, subset=['الحالة']), use_container_width=True)
+
+# --- ملاحظات النظام ---
+st.divider()
+col_info1, col_info2 = st.columns(2)
+with col_info1:
+    st.info(f"**وضع النظام:** {'بروتوكول الحماية مفعّل' if protocol_mode else 'وضع القراءة فقط (بدون بروتوكول)'}")
+with col_info2:
+    if not protocol_mode:
+        st.warning("⚠️ تحذير: النظام الآن لا يفصل آلياً عند الخطر (البروتوكول معطل)!")
+
+# تحديث الصفحة كل ثانية (Real-time)
+time.sleep(1)
+st.rerun()
