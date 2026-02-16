@@ -5,122 +5,131 @@ import time
 from datetime import datetime
 
 # إعدادات الصفحة
-st.set_page_config(page_title="Al-Anbar Smart Grid - Full System", layout="wide")
+st.set_page_config(page_title="Al-Anbar Smart Grid Control", layout="wide")
 
-# --- 1. تهيئة الذاكرة والسجلات (Session State) ---
+# --- 1. تهيئة الذاكرة والسجلات ---
 if 'history' not in st.session_state:
     st.session_state.history = pd.DataFrame(columns=["الوقت", "المحطة", "التيار", "الحرارة", "الحمل", "الحالة"])
 if 'net_raw' not in st.session_state: st.session_state.net_raw = 0
 if 'net_proto' not in st.session_state: st.session_state.net_proto = 0
 if 'transformers' not in st.session_state:
     st.session_state.transformers = {
-        f"محولة {i}": {"active": True, "last_i": 60.0, "temp": 45.0, "reason": "طبيعي ✅"} for i in range(1, 5)
+        f"محولة {i}": {"active": True, "last_i": 60.0, "temp": 45.0, "reason": "طبيعي ✅"} for i in range(1, 6)
     }
 
-# --- 2. واجهة العناوين ---
-st.title("⚡ منظومة السيطرة والحماية الذكية - محافظة الأنبار")
-st.write(f"**المهندس:** محمد نبيل | **مركز السيطرة الرئيسي** | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+# --- 2. واجهة التحكم الرئيسية ---
+st.title("🖥️ وحدة السيطرة الموحدة - شبكة الأنبار الذكية")
+st.write(f"**المهندس المشرف:** محمد نبيل | **الموقع:** الرمادي | {datetime.now().strftime('%H:%M:%S')}")
 
-# --- 3. قسم ضغط الشبكة (البروتوكول) ---
-st.subheader("🌐 مراقبة ضغط البيانات (Network Data Stress)")
-n_col1, n_col2 = st.columns(2)
-
-# محاكاة حجم البيانات
-inc_raw = np.random.randint(100, 150)
-inc_proto = np.random.randint(10, 25)
-st.session_state.net_raw += inc_raw
-st.session_state.net_proto += inc_proto
-
-with n_col1:
-    st.write("📡 **بدون بروتوكول (إرسال عشوائي)**")
-    st.progress(min(inc_raw/200, 1.0))
-    st.metric("الحجم التراكمي", f"{st.session_state.net_raw} KB", f"+{inc_raw} KB/s", delta_color="inverse")
-
-with n_col2:
-    st.write("🔐 **ببروتوكول ذكي (بيانات منظمة)**")
-    st.progress(min(inc_proto/200, 1.0))
-    st.metric("الحجم التراكمي", f"{st.session_state.net_proto} KB", f"+{inc_proto} KB/s")
+# زر تبديل البروتوكول (هو المحرك الأساسي للنظام)
+protocol_on = st.toggle("🚀 تفعيل البروتوكول الذكي (فرز الأولوية + ضغط البيانات)", value=True)
 
 st.divider()
 
-# --- 4. كروت التحكم اليدوي (القديم المطور) ---
-st.subheader("🎮 وحدة التحكم اليدوي وفصل المحطات")
-t_cols = st.columns(4)
+# --- 3. محاكاة ضغط البيانات والشبكة ---
+col_n1, col_n2 = st.columns(2)
+# إذا البروتوكول مفعل، نستهلك بيانات قليلة، إذا طافي نستهلك بيانات هواي
+inc_raw = np.random.randint(120, 200) 
+inc_proto = np.random.randint(15, 30)
+
+if protocol_on:
+    st.session_state.net_proto += inc_proto
+    data_vol = inc_proto
+    status_msg = "✅ بيانات مضغوطة ومنظمة"
+else:
+    st.session_state.net_raw += inc_raw
+    data_vol = inc_raw
+    status_msg = "⚠️ ضغط عالي (بيانات عشوائية)"
+
+with col_n1:
+    st.metric("حجم الإرسال الحالي", f"{data_vol} KB/s", status_msg)
+with col_n2:
+    total_net = st.session_state.net_proto if protocol_on else st.session_state.net_raw
+    st.write(f"**إجمالي البيانات المخزنة:** {total_net} KB")
+    st.progress(min(data_vol/200, 1.0))
+
+st.divider()
+
+# --- 4. معالجة بيانات المحولات ---
+current_readings = []
 max_cap = 150.0
 
-current_readings = []
+# كروت التحكم اليدوي (للفصل والتشغيل)
+st.subheader("🕹️ أزرار الفصل اليدوي")
+t_cols = st.columns(5)
 
 for idx, (name, state) in enumerate(st.session_state.transformers.items()):
     if state["active"]:
-        # محاكاة البيانات مع احتمالية "Short Circuit"
-        change = np.random.uniform(-5, 10)
-        if np.random.rand() < 0.01: change = 70 # شورت مفاجئ
-        
+        # محاكاة البيانات
+        change = np.random.uniform(-5, 20)
         new_i = max(0, min(180, state["last_i"] + change))
         new_t = max(30, min(110, state["temp"] + (change * 0.3)))
         load_pct = (new_i / max_cap) * 100
         
-        # --- منطق الحماية التلقائي ---
-        reason = "طبيعي ✅"
-        if (new_i - state["last_i"]) > 50: 
-            state["active"], reason = False, "🚨 Short Circuit"
-        elif load_pct > 95: 
-            state["active"], reason = False, "🔥 Overload > 95%"
-        elif new_t > 90: 
-            state["active"], reason = False, "🌡️ Overheat > 90C"
-        
-        state["last_i"], state["temp"], state["reason"] = new_i, new_t, reason
+        # تحديد مستوى الخطورة (prio)
+        if load_pct > 95 or new_t > 90:
+            status, prio = "🚨 خطر جداً", 1
+        elif load_pct > 75:
+            status, prio = "⚠️ تحذير حمل", 2
+        else:
+            status, prio = "✅ طبيعي", 3
+            
+        state["last_i"], state["temp"], state["reason"] = new_i, new_t, status
     else:
-        new_i, new_t, load_pct = 0.0, 30.0, state["reason"]
+        new_i, new_t, load_pct, prio = 0.0, 30.0, 0.0, 4
+        status = "🛑 مفصول يدوياً"
 
-    # عرض كرت التحكم
+    # أزرار التحكم في الكروت
     with t_cols[idx]:
-        st.markdown(f"### {name}")
-        st.metric("الحمل الحالي", f"{load_pct:.1f}%")
         if state["active"]:
-            if st.button(f"فصل {name}", key=f"trip_{name}"):
-                state["active"], state["reason"] = False, "🛑 فصل يدوي"
+            if st.button(f"OFF {name}", key=f"off_{name}", use_container_width=True):
+                state["active"] = False
                 st.rerun()
         else:
-            if st.button(f"تشغيل {name}", key=f"on_{name}"):
-                state["active"], state["reason"] = True, "طبيعي ✅"
+            if st.button(f"ON {name}", key=f"on_{name}", use_container_width=True):
+                state["active"] = True
                 st.rerun()
 
-    # تجهيز القراءات للجدول
-    prio = 1 if not state["active"] or load_pct > 90 else (2 if load_pct > 75 else 3)
-    reading = {
-        "الوقت": datetime.now().strftime('%H:%M:%S'),
+    # إضافة للجدول
+    current_readings.append({
         "المحطة": name,
         "التيار (A)": round(new_i, 1),
         "الحرارة (C°)": round(new_t, 1),
         "الحمل (%)": round(load_pct, 1),
-        "الحالة": state["reason"],
+        "الحالة": status,
         "p": prio
-    }
-    current_readings.append(reading)
-    # الأرشفة (إضافة للسجل التاريخي)
-    st.session_state.history = pd.concat([pd.DataFrame([reading]), st.session_state.history], ignore_index=True).head(200)
+    })
 
+# --- 5. الجدول الموحد (الفرز حسب البروتوكول) ---
+st.subheader("📋 جدول البيانات والفرز اللحظي")
+df = pd.DataFrame(current_readings)
+
+if protocol_on:
+    # الفرز الذكي (الخطر فوق)
+    df = df.sort_values("p")
+    st.info("💡 تم تفعيل البروتوكول: الجدول مفرز حسب الأولوية (الأخطر في الأعلى).")
+else:
+    # إرسال عشوائي (بدون فرز)
+    df = df.sample(frac=1).reset_index(drop=True)
+    st.warning("⚠️ إرسال عشوائي: البيانات غير مفرزة وتستهلك حجم إرسال كبير.")
+
+# تنسيق ألوان الجدول
+def apply_style(val):
+    if '🚨' in str(val): return 'background-color: #ff4b4b; color: white; font-weight: bold'
+    if '⚠️' in str(val): return 'background-color: #ffa500; color: black'
+    if '✅' in str(val): return 'background-color: #28a745; color: white'
+    if '🛑' in str(val): return 'background-color: #721c24; color: white'
+    return ''
+
+st.table(df.drop(columns=['p']).style.applymap(apply_style, subset=['الحالة']))
+
+# --- 6. الأرشيف التاريخي ---
 st.divider()
-
-# --- 5. جدول القراءات اللحظية المفرز ---
-col_table, col_sort = st.columns([3, 1])
-with col_table: st.subheader("📋 القراءات الحالية (فرز الأولوية)")
-with col_sort: sort_on = st.toggle("تفعيل الفرز (الأخطر أولاً)", value=True)
-
-df_now = pd.DataFrame(current_readings)
-if sort_on: df_now = df_now.sort_values("p")
-
-st.table(df_now.drop(columns=['p']).style.applymap(
-    lambda x: 'background-color: #ff4b4b; color: white' if '🚨' in str(x) or '🔥' in str(x) or '🛑' in str(x) else 
-    ('background-color: #ffa500' if 'Overload' in str(x) else ''), subset=['الحالة']
-))
-
-# --- 6. سجل الأرشفة التاريخي ---
-st.divider()
-st.subheader("📜 سجل الأرشفة التاريخي (Historical Log)")
-st.write("هذا السجل يحفظ كافة البيانات السابقة للرجوع إليها عند حدوث عطل:")
-st.dataframe(st.session_state.history.drop(columns=['p']), use_container_width=True, hide_index=True)
+st.subheader("📜 سجل الأرشفة (Data Logging)")
+# إضافة القراءات للسجل التاريخي
+new_history = pd.concat([df.drop(columns=['p']), st.session_state.history], ignore_index=True).head(100)
+st.session_state.history = new_history
+st.dataframe(st.session_state.history, use_container_width=True, hide_index=True)
 
 # تحديث تلقائي
 time.sleep(1.5)
