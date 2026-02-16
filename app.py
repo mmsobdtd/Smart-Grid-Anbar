@@ -2,146 +2,92 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import time
-from datetime import datetime
 
-# إعدادات الصفحة لتكون عريضة ومنظمة
-st.set_page_config(page_title="مركز سيطرة أحمال الأنبار", layout="wide")
+# إعدادات الصفحة
+st.set_page_config(page_title="Network & Grid Control - Anbar", layout="wide")
 
-# --- دالة تشغيل صوت الإنذار ---
-def play_alarm():
-    sound_html = """
-        <audio autoplay>
-            <source src="https://www.soundjay.com/buttons/beep-01a.mp3" type="audio/mpeg">
-        </audio>
-    """
-    st.components.v1.html(sound_html, height=0)
+# --- محاكاة استهلاك البيانات (Network Traffic) ---
+if 'total_data_no_proto' not in st.session_state:
+    st.session_state.total_data_no_proto = 0
+    st.session_state.total_data_with_proto = 0
 
-# --- تهيئة البيانات في الذاكرة (Session State) ---
-# أضفنا 'load_trend' لجعل الارتفاع تدريجي وليس عشوائي مفاجئ
-if 'transformers' not in st.session_state:
-    st.session_state.transformers = {
-        f"محولة {i}": {
-            "active": True, 
-            "reason": "", 
-            "current_load": np.random.uniform(50, 70), # تبدأ بحمل منخفض
-            "temp": np.random.uniform(40, 50),
-            "overload_counter": 0 # لضمان عدم الفصل اللحظي
-        } for i in range(1, 5)
-    }
+# --- العنوان ---
+st.title("🌐 مركز مراقبة الشبكة والبيانات - الأنبار")
+st.write("**المهندس المنفذ:** محمد نبيل | **جامعة الأنبار - كلية الهندسة**")
 
-# --- واجهة المستخدم الرئيسية ---
-st.title("🔌 نظام السيطرة الذكي - محافظة الأنبار")
-st.write(f"**إعداد المهندس:** محمد نبيل | **الموقع:** الرمادي - مركز السيطرة | **الوقت:** {datetime.now().strftime('%H:%M:%S')}")
+# --- قسم مقارنة ضغط الشبكة (Network Stress Section) ---
+st.subheader("📊 تحليل ضغط البيانات المرسلة (Network Throughput)")
 
-# --- القائمة الجانبية ---
-st.sidebar.header("🛠️ إعدادات المنظومة")
-protocol_mode = st.sidebar.toggle("تفعيل بروتوكول الحماية (الفصل الآلي)", value=True)
-reset_btn = st.sidebar.button("إعادة تشغيل المنظومة بالكامل")
+col_n1, col_n2 = st.columns(2)
 
-if reset_btn:
-    for name in st.session_state.transformers:
-        st.session_state.transformers[name] = {
-            "active": True, "reason": "", "current_load": 60, "temp": 45, "overload_counter": 0
-        }
-    st.rerun()
+# حساب الزيادة في البيانات لكل ثانية (محاكاة)
+# بدون بروتوكول: بيانات كثيرة وعشوائية
+inc_no_proto = np.random.randint(80, 120) 
+# مع بروتوكول: بيانات منظمة وأقل حجماً
+inc_with_proto = np.random.randint(15, 30) 
 
-# --- معالجة البيانات والمحاكاة ---
-max_capacity = 150.0  # الأمبير الأقصى
-threshold = 0.90      # 90% فصل
-data_for_table = []
+st.session_state.total_data_no_proto += inc_no_proto
+st.session_state.total_data_with_proto += inc_with_proto
 
-# تحديث القراءات لكل محولة
-for name, data in st.session_state.transformers.items():
-    if data["active"]:
-        # جعل الحمل يرتفع تدريجياً أو ينخفض بشكل واقعي
-        change = np.random.uniform(-5, 12) # ميل للزيادة أكثر
-        data["current_load"] = max(20, min(160, data["current_load"] + change))
-        data["temp"] = max(30, min(100, data["temp"] + (change * 0.2)))
-        
-        load_pct = (data["current_load"] / max_capacity) * 100
-        losses = (data["current_load"]**2 * 0.05) / 1000 # حساب الخسائر kW
-        
-        # منطق الفصل (يجب أن يستمر الخطر لـ 3 دورات قبل الفصل)
-        status = "طبيعي ✅"
-        if load_pct >= 90 or data["temp"] >= 85:
-            status = "خطر 🚩"
-            if protocol_mode:
-                data["overload_counter"] += 1
-                if data["overload_counter"] >= 3: # "خليها شوي تشتغل وبعدين تفصل"
-                    data["active"] = False
-                    data["reason"] = "تجاوز حد الـ 90% (فصل آلي)"
-                    play_alarm()
-            else:
-                status = "خطر (تحذير يدوي) ⚠️"
-        elif load_pct >= 75:
-            status = "تحذير ⚠️"
-            data["overload_counter"] = 0
-        else:
-            data["overload_counter"] = 0
-    else:
-        # المحولة مفصولة
-        load_pct = 0
-        losses = 0
-        status = "فصل (TRIPPED) ❌"
+with col_n1:
+    st.write("📡 **بدون بروتوكول (Raw Data Stream)**")
+    # شريط ضغط الشبكة (أحمر لأنه يستهلك باندويث عالي)
+    st.progress(min(inc_no_proto / 150, 1.0))
+    st.metric("حجم البيانات الكلي", f"{st.session_state.total_data_no_proto} KB", f"+{inc_no_proto} KB/s", delta_color="inverse")
 
-    # إضافة البيانات للجدول
-    data_for_table.append({
-        "اسم المحطة": name,
-        "التيار (A)": f"{data['current_load']:.1f}",
-        "الحرارة (C°)": f"{data['temp']:.1f}",
-        "نسبة الحمل": f"{load_pct:.1f}%",
-        "الخسائر (kW)": f"{losses:.3f}",
-        "حالة النظام": status,
-        "ملاحظات": data["reason"]
+with col_n2:
+    st.write("🔐 **ببروتوكول ذكي (MQTT/Optimization)**")
+    # شريط ضغط الشبكة (أخضر لأنه كفوء)
+    st.progress(min(inc_with_proto / 150, 1.0))
+    st.metric("حجم البيانات الكلي", f"{st.session_state.total_data_with_proto} KB", f"+{inc_with_proto} KB/s")
+
+# عرض الفرق (الاستثمار في كفاءة البيانات)
+efficiency = 100 - (inc_with_proto / inc_no_proto * 100)
+st.success(f"💡 **النتيجة:** استخدام البروتوكول قلل ضغط الشبكة بنسبة **{efficiency:.1f}%** مقارنة بالإرسال العشوائي.")
+
+st.divider()
+
+# --- جدول قراءات المحولات ---
+st.subheader("📋 جدول مراقبة المحولات اللحظي")
+
+transformers = []
+for i in range(1, 5):
+    v = np.random.uniform(218, 222)
+    i_val = np.random.uniform(40, 145)
+    t = np.random.uniform(45, 88)
+    load = (i_val / 150) * 100
+    loss = (i_val**2 * 0.05) / 1000
+    
+    status = "طبيعي ✅"
+    if load > 90 or t > 80: status = "خطر 🚩"
+    elif load > 75: status = "تحذير ⚠️"
+
+    transformers.append({
+        "المحطة": f"محولة {i}",
+        "الجهد (V)": f"{v:.1f}",
+        "التيار (A)": f"{i_val:.1f}",
+        "الحرارة (C°)": f"{t:.1f}",
+        "الخسائر (kW)": f"{loss:.3f}",
+        "نسبة الحمل": f"{load:.1f}%",
+        "الحالة": status
     })
 
-# --- عرض النتائج بصرياً ---
+df = pd.DataFrame(transformers)
 
-# 1. كروت العرض (Cards) مع شريط الضغط
-cols = st.columns(4)
-for i, name in enumerate(st.session_state.transformers):
-    with cols[i]:
-        d = st.session_state.transformers[name]
-        load_val = (d["current_load"]/max_capacity)
-        st.subheader(name)
-        st.metric("الحمل", f"{int(load_val*100)}%")
-        # شريط الضغط يتغير لونه حسب الحمل
-        bar_color = "green" if load_val < 0.75 else "orange" if load_val < 0.9 else "red"
-        st.progress(min(load_val, 1.0))
-        if not d["active"]:
-            st.error(f"انفصلت: {d['reason']}")
-
-st.divider()
-
-# 2. الجدول الكبير والمنظم (The Main Table)
-st.subheader("📋 سجل القراءات اللحظية الموحد")
-
-df = pd.DataFrame(data_for_table)
-
-# دالة لتنسيق ألوان الجدول بشكل احترافي
+# تنسيق الجدول بشكل احترافي
 def style_status(val):
-    if 'طبيعي' in val: color = '#d4edda' # أخضر فاتح
-    elif 'تحذير' in val: color = '#fff3cd' # أصفر فاتح
-    elif 'خطر' in val: color = '#f8d7da' # أحمر فاتح
-    elif 'فصل' in val: color = '#721c24; color: white' # ماروني/أحمر غامق
-    else: color = 'white'
-    return f'background-color: {color}'
+    if 'خطر' in val: return 'background-color: #ff4b4b; color: white'
+    if 'تحذير' in val: return 'background-color: #ffa500'
+    if 'طبيعي' in val: return 'background-color: #28a745; color: white'
+    return ''
 
-# عرض الجدول بحجم كبير وكامل العرض
-st.table(df.style.applymap(style_status, subset=['حالة النظام']))
+st.table(df.style.applymap(style_status, subset=['الحالة']))
 
-# --- معلومات إضافية أسفل الشاشة ---
-st.divider()
-c1, c2, c3 = st.columns(3)
-with c1:
-    st.info("**معلومة:** يتم حساب الخسائر بناءً على ممانعة الأسلاك المقدرة بـ 0.05 أوم.")
-with c2:
-    st.info("**البروتوكول:** مضبوط للفصل بعد 3 ثوانٍ من تجاوز الحمل لنسبة 90%.")
-with c3:
-    if not protocol_mode:
-        st.warning("**تنبيه:** وضع الحماية معطل، المحولات لن تفصل آلياً!")
+# زر لإعادة تصوير البيانات
+if st.sidebar.button("تصفير سجل البيانات"):
+    st.session_state.total_data_no_proto = 0
+    st.session_state.total_data_with_proto = 0
+    st.rerun()
 
-# تحديث تلقائي كل ثانية
 time.sleep(1)
 st.rerun()
-    
