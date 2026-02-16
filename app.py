@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 
 # إعدادات الصفحة
-st.set_page_config(page_title="Al-Anbar Grid Stress Test", layout="wide")
+st.set_page_config(page_title="Al-Anbar Smart Grid - Balanced Mode", layout="wide")
 
 # --- 1. تهيئة الذاكرة (Session State) ---
 if 'history' not in st.session_state:
@@ -14,91 +14,83 @@ if 'net_load' not in st.session_state: st.session_state.net_load = 0
 if 'is_crashed' not in st.session_state: st.session_state.is_crashed = False
 if 'transformers' not in st.session_state:
     st.session_state.transformers = {
-        f"محولة {i}": {"active": True, "last_i": 60.0, "temp": 45.0, "reason": "طبيعي ✅"} for i in range(1, 6)
+        f"محولة {i}": {"active": True, "last_i": 70.0, "reason": "طبيعي ✅"} for i in range(1, 6)
     }
 
-# --- 2. واجهة التحكم ---
-st.title("📟 نظام محاكاة اختناق الشبكة والانهيار الرقمي")
-st.write(f"**المهندس المصمم:** محمد نبيل | **الحالة:** اختبار الضغط الحقيقي")
+# --- 2. واجهة التحكم والعناوين ---
+st.title("📟 نظام السيطرة والتحليل الاستقرار - محافظة الأنبار")
+st.write(f"**المهندس:** محمد نبيل | **الوضع الحالي:** تشغيل اعتيادي مع مراقبة الأحمال")
 
-# زر البروتوكول - المنقذ من الانهيار
-protocol_on = st.sidebar.toggle("🔐 تفعيل بروتوكول تحسين البيانات (Optimization)", value=True)
-
-if st.sidebar.button("♻️ إعادة تشغيل النظام (System Reset)"):
+# مفتاح البروتوكول في الجانب
+protocol_on = st.sidebar.toggle("🔐 تفعيل بروتوكول الحماية (Optimization)", value=True)
+if st.sidebar.button("♻️ إعادة ضبط النظام"):
     st.session_state.net_load = 0
     st.session_state.is_crashed = False
     st.rerun()
 
-# --- 3. منطق اختناق الشبكة (Congestion Logic) ---
+# --- 3. منطق اختناق الشبكة والانهيار ---
 if not protocol_on:
-    # زيادة الضغط بسرعة (إرسال عشوائي كثيف)
-    st.session_state.net_load += np.random.randint(5, 15)
-    # حساب التأخير (Latency) - كلما زاد الضغط زاد التأخير الفعلي للبرنامج
-    delay = st.session_state.net_load / 20 
+    # البيانات العشوائية تزيد الضغط بسرعة
+    st.session_state.net_load += np.random.randint(8, 16)
+    delay = st.session_state.net_load / 15
 else:
-    # البروتوكول يقلل الضغط ويحافظ على ثباته
+    # البروتوكول يحافظ على استقرار الشبكة
     st.session_state.net_load = max(10, st.session_state.net_load - 5)
     delay = 0.1
 
-# التحقق من الانهيار
 if st.session_state.net_load >= 100:
     st.session_state.is_crashed = True
 
-# --- 4. عرض الانهيار أو العمل الطبيعي ---
 if st.session_state.is_crashed:
-    st.markdown("""
-        <div style="background-color: #0000aa; padding: 50px; border: 5px solid red; text-align: center; color: white; font-family: monospace;">
-            <h1 style="font-size: 50px;">FATAL NETWORK ERROR</h1>
-            <p style="font-size: 24px;">SYSTEM COLLAPSE: BUFFER OVERFLOW</p>
-            <p>البيانات المرسلة تجاوزت سعة الشبكة (Bandwidth Exceeded)</p>
-            <p>لم يتم استلام القراءات من المحولات... توقف الاتصال</p>
-            <h2 style="color: yellow;">تم فقدان السيطرة على الشبكة!</h2>
-        </div>
-    """, unsafe_allow_html=True)
+    st.markdown("""<div style="background-color: #00008b; padding: 40px; text-align: center; color: white; border: 4px solid yellow;">
+    <h1>⚠️ CRITICAL ERROR: NETWORK COLLAPSE</h1>
+    <p>توقف تدفق البيانات نتيجة الاختناق المروري في الشبكة (No Protocol Control)</p></div>""", unsafe_allow_html=True)
     st.stop()
 
-# عرض شريط ضغط الشبكة
-st.subheader("📡 مراقبة تدفق البيانات واختناق الشبكة (Network Congestion)")
-cols_net = st.columns([3, 1])
-with cols_net[0]:
-    bar_color = "red" if st.session_state.net_load > 80 else "orange" if st.session_state.net_load > 50 else "green"
-    st.write(f"**مستوى اختناق الشبكة:** {st.session_state.net_load}%")
+# عرض مؤشرات الشبكة
+c_net1, c_net2 = st.columns([3, 1])
+with c_net1:
+    st.write(f"**مستوى إجهاد الشبكة:** {st.session_state.net_load}%")
     st.progress(st.session_state.net_load / 100)
-with cols_net[1]:
-    st.metric("التأخير (Latency)", f"{delay:.2f} s", delta="تأخير حرج" if delay > 2 else None, delta_color="inverse")
+with c_net2:
+    st.metric("تأخير البيانات (Latency)", f"{delay:.2f} s")
 
 st.divider()
 
-# --- 5. معالجة بيانات المحولات ---
+# --- 4. محاكاة القراءات (أغلبها طبيعي وتنبيه) ---
 current_readings = []
 max_cap = 150.0
 
-st.subheader("🕹️ لوحة السيطرة (تتأثر بالتأخير)")
+st.subheader("🕹️ وحدة التحكم اليدوي المستقل")
 t_cols = st.columns(5)
 
 for idx, (name, state) in enumerate(st.session_state.transformers.items()):
     if state["active"]:
-        # قراءات عشوائية
-        change = np.random.uniform(-5, 15)
-        new_i = max(0, min(180, state["last_i"] + change))
+        # جعل النطاق يميل للحالات الطبيعية والتحذيرية
+        # تيار بين 60 و 150 أمبير
+        new_i = np.random.uniform(60, 150) 
         load_pct = (new_i / max_cap) * 100
         
-        if load_pct > 95: status, prio = "🚨 خطر", 1
-        elif load_pct > 75: status, prio = "⚠️ تحذير", 2
-        else: status, prio = "✅ طبيعي", 3
-        
+        # توزيع الحالات بناءً على طلبك
+        if load_pct >= 95: 
+            status, prio = "🚨 خطر (تجاوز 95%)", 1
+        elif load_pct >= 80: 
+            status, prio = "⚠️ تحذير (حمل عالي)", 2
+        else: 
+            status, prio = "✅ طبيعي", 3
+            
         state["last_i"], state["reason"] = new_i, status
     else:
         new_i, load_pct, prio, status = 0.0, 0.0, 4, "🛑 مفصول"
 
-    # أزرار الفصل
     with t_cols[idx]:
+        st.metric(name, f"{load_pct:.1f}%")
         if state["active"]:
-            if st.button(f"OFF {name}", key=f"off_{name}"):
+            if st.button(f"OFF", key=f"off_{idx}", use_container_width=True):
                 state["active"] = False
                 st.rerun()
         else:
-            if st.button(f"ON {name}", key=f"on_{name}"):
+            if st.button(f"ON", key=f"on_{idx}", use_container_width=True):
                 state["active"] = True
                 st.rerun()
 
@@ -110,26 +102,36 @@ for idx, (name, state) in enumerate(st.session_state.transformers.items()):
         "p": prio
     })
 
-# --- 6. الجدول الموحد (المفرز أو المخربط) ---
-st.subheader("📋 جدول البيانات المستلمة")
+# --- 5. الجدول الموحد (الفرز والبروتوكول) ---
+st.subheader("📋 ميزان الأحمال وجدول البيانات اللحظي")
 df = pd.DataFrame(current_readings)
 
 if protocol_on:
+    # الفرز الذكي: يجمع التنبيهات والخطر فوق
     df = df.sort_values("p")
-    st.success("البروتوكول فعال: يتم استلام البيانات مفرزة ومنظمة.")
+    st.success("نظام البروتوكول مفعّل: البيانات مفرزة ومنظمة.")
 else:
-    # محاكاة وصول البيانات بشكل عشوائي ومخربط بسبب الاختناق
+    # إرسال عشوائي: الجدول يتلخبط باستمرار
     df = df.sample(frac=1)
-    st.warning("تحذير: البيانات تصل بشكل عشوائي وغير مرتب نتيجة اختناق الشبكة.")
+    st.warning("إرسال عشوائي: البيانات تصل بترتيب غير ثابت (خطر الانهيار قريب).")
 
-st.table(df.drop(columns=['p']).style.applymap(
-    lambda x: 'background-color: #ff4b4b; color: white' if '🚨' in str(x) or '🛑' in str(x) else 
-    ('background-color: #ffa500' if '⚠️' in str(x) else ''), subset=['الحالة']
-))
+# تنسيق ألوان الجدول
+def style_status(val):
+    if '🚨' in str(val): return 'background-color: #ff4b4b; color: white'
+    if '⚠️' in str(val): return 'background-color: #fff3cd; color: #856404'
+    if '✅' in str(val): return 'background-color: #d4edda; color: #155724'
+    if '🛑' in str(val): return 'background-color: #721c24; color: white'
+    return ''
 
-# إضافة للأرشفة
-st.session_state.history = pd.concat([df.drop(columns=['p']), st.session_state.history], ignore_index=True).head(50)
+st.table(df.drop(columns=['p']).style.applymap(style_status, subset=['الحالة']))
 
-# محاكاة التأخير الفعلي (Latency)
-time.sleep(delay if not protocol_on else 1)
+# --- 6. الأرشيف التاريخي (لم يتمسح) ---
+st.divider()
+st.subheader("📜 أرشيف قراءات الشبكة (History)")
+new_data = df.drop(columns=['p'])
+st.session_state.history = pd.concat([new_data, st.session_state.history], ignore_index=True).head(50)
+st.dataframe(st.session_state.history, use_container_width=True, hide_index=True)
+
+# تأخير المحاكاة الفعلي
+time.sleep(delay if not protocol_on else 1.2)
 st.rerun()
