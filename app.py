@@ -5,87 +5,93 @@ import time
 from datetime import datetime
 
 # إعدادات الصفحة
-st.set_page_config(page_title="Al-Anbar Grid - System Stability", layout="wide")
+st.set_page_config(page_title="Al-Anbar Grid Stress Test", layout="wide")
 
-# --- 1. تهيئة الذاكرة والسجلات ---
+# --- 1. تهيئة الذاكرة (Session State) ---
 if 'history' not in st.session_state:
-    st.session_state.history = pd.DataFrame(columns=["الوقت", "المحطة", "التيار", "الحرارة", "الحمل", "الحالة"])
-if 'net_stress' not in st.session_state: st.session_state.net_stress = 0
+    st.session_state.history = pd.DataFrame(columns=["الوقت", "المحطة", "التيار", "الحمل", "الحالة"])
+if 'net_load' not in st.session_state: st.session_state.net_load = 0
+if 'is_crashed' not in st.session_state: st.session_state.is_crashed = False
 if 'transformers' not in st.session_state:
     st.session_state.transformers = {
         f"محولة {i}": {"active": True, "last_i": 60.0, "temp": 45.0, "reason": "طبيعي ✅"} for i in range(1, 6)
     }
 
-# --- 2. واجهة التحكم الرئيسية ---
-st.title("📟 مركز السيطرة والتحقق من استقرارية الشبكة - الأنبار")
-st.write(f"**المهندس:** محمد نبيل | **الحالة:** اختبار الضغط التشغيلي")
+# --- 2. واجهة التحكم ---
+st.title("📟 نظام محاكاة اختناق الشبكة والانهيار الرقمي")
+st.write(f"**المهندس المصمم:** محمد نبيل | **الحالة:** اختبار الضغط الحقيقي")
 
-# المفتاح السحري للنظام
-protocol_on = st.toggle("🌐 تفعيل بروتوكول الحماية والفرز الذكي", value=True)
+# زر البروتوكول - المنقذ من الانهيار
+protocol_on = st.sidebar.toggle("🔐 تفعيل بروتوكول تحسين البيانات (Optimization)", value=True)
+
+if st.sidebar.button("♻️ إعادة تشغيل النظام (System Reset)"):
+    st.session_state.net_load = 0
+    st.session_state.is_crashed = False
+    st.rerun()
+
+# --- 3. منطق اختناق الشبكة (Congestion Logic) ---
+if not protocol_on:
+    # زيادة الضغط بسرعة (إرسال عشوائي كثيف)
+    st.session_state.net_load += np.random.randint(5, 15)
+    # حساب التأخير (Latency) - كلما زاد الضغط زاد التأخير الفعلي للبرنامج
+    delay = st.session_state.net_load / 20 
+else:
+    # البروتوكول يقلل الضغط ويحافظ على ثباته
+    st.session_state.net_load = max(10, st.session_state.net_load - 5)
+    delay = 0.1
+
+# التحقق من الانهيار
+if st.session_state.net_load >= 100:
+    st.session_state.is_crashed = True
+
+# --- 4. عرض الانهيار أو العمل الطبيعي ---
+if st.session_state.is_crashed:
+    st.markdown("""
+        <div style="background-color: #0000aa; padding: 50px; border: 5px solid red; text-align: center; color: white; font-family: monospace;">
+            <h1 style="font-size: 50px;">FATAL NETWORK ERROR</h1>
+            <p style="font-size: 24px;">SYSTEM COLLAPSE: BUFFER OVERFLOW</p>
+            <p>البيانات المرسلة تجاوزت سعة الشبكة (Bandwidth Exceeded)</p>
+            <p>لم يتم استلام القراءات من المحولات... توقف الاتصال</p>
+            <h2 style="color: yellow;">تم فقدان السيطرة على الشبكة!</h2>
+        </div>
+    """, unsafe_allow_html=True)
+    st.stop()
+
+# عرض شريط ضغط الشبكة
+st.subheader("📡 مراقبة تدفق البيانات واختناق الشبكة (Network Congestion)")
+cols_net = st.columns([3, 1])
+with cols_net[0]:
+    bar_color = "red" if st.session_state.net_load > 80 else "orange" if st.session_state.net_load > 50 else "green"
+    st.write(f"**مستوى اختناق الشبكة:** {st.session_state.net_load}%")
+    st.progress(st.session_state.net_load / 100)
+with cols_net[1]:
+    st.metric("التأخير (Latency)", f"{delay:.2f} s", delta="تأخير حرج" if delay > 2 else None, delta_color="inverse")
 
 st.divider()
 
-# --- 3. محاكاة الانهيار (The Collapse Logic) ---
-if not protocol_on:
-    # محاكاة انهيار النظام
-    st.session_state.net_stress += np.random.randint(20, 50)
-    
-    st.error("!!! CRITICAL SYSTEM FAILURE !!!")
-    st.markdown("""
-        <div style="background-color: #ff4b4b; padding: 20px; border-radius: 10px; text-align: center; color: white;">
-            <h1>⚠️ انهيار النظام (System Collapse)</h1>
-            <p>فشل في معالجة البيانات بسبب الإرسال العشوائي وضغط الشبكة العالي</p>
-            <p>البيانات غير مفرزة - وقت الاستجابة (Latency): INFINITE</p>
-        </div>
-    """, unsafe_allow_html=True)
-    
-    # إظهار شريط ضغط الشبكة وهو ينفجر
-    st.write("**مستوى اختناق الشبكة (Network Congestion):**")
-    st.progress(1.0) # شريط كامل أحمر
-    
-    if st.button("محاولة إعادة الاتصال الاضطراري"):
-        st.rerun()
-    
-    st.stop() # إيقاف بقية الكود عن العمل (هذا هو الانهيار الحقيقي)
-
-else:
-    # إذا البروتوكول يعمل، نصفر الإجهاد تدريجياً
-    st.session_state.net_stress = max(0, st.session_state.net_stress - 10)
-    st.success("✅ النظام مستقر: البروتوكول يقوم بفرز البيانات وتقليل الضغط")
-    
-    col_n1, col_n2 = st.columns(2)
-    with col_n1:
-        st.metric("حجم البيانات", "18 KB/s", "كفاءة عالية")
-    with col_n2:
-        st.write("**ضغط الشبكة الحالي:**")
-        st.progress(0.15) # شريط منخفض يوضح الراحة في الشبكة
-
-# --- 4. معالجة بيانات المحولات (تعمل فقط إذا البروتوكول ON) ---
+# --- 5. معالجة بيانات المحولات ---
 current_readings = []
 max_cap = 150.0
 
-st.subheader("🕹️ وحدة التحكم اليدوي")
+st.subheader("🕹️ لوحة السيطرة (تتأثر بالتأخير)")
 t_cols = st.columns(5)
 
 for idx, (name, state) in enumerate(st.session_state.transformers.items()):
     if state["active"]:
-        change = np.random.uniform(-2, 15)
+        # قراءات عشوائية
+        change = np.random.uniform(-5, 15)
         new_i = max(0, min(180, state["last_i"] + change))
-        new_t = max(30, min(105, state["temp"] + (change * 0.2)))
         load_pct = (new_i / max_cap) * 100
         
-        if load_pct > 95 or new_t > 90:
-            status, prio = "🚨 خطر جداً", 1
-        elif load_pct > 75:
-            status, prio = "⚠️ تحذير حمل", 2
-        else:
-            status, prio = "✅ طبيعي", 3
-            
-        state["last_i"], state["temp"], state["reason"] = new_i, new_t, status
+        if load_pct > 95: status, prio = "🚨 خطر", 1
+        elif load_pct > 75: status, prio = "⚠️ تحذير", 2
+        else: status, prio = "✅ طبيعي", 3
+        
+        state["last_i"], state["reason"] = new_i, status
     else:
-        new_i, new_t, load_pct, prio = 0.0, 30.0, 0.0, 4
-        status = "🛑 مفصول يدوياً"
+        new_i, load_pct, prio, status = 0.0, 0.0, 4, "🛑 مفصول"
 
+    # أزرار الفصل
     with t_cols[idx]:
         if state["active"]:
             if st.button(f"OFF {name}", key=f"off_{name}"):
@@ -99,31 +105,31 @@ for idx, (name, state) in enumerate(st.session_state.transformers.items()):
     current_readings.append({
         "المحطة": name,
         "التيار (A)": round(new_i, 1),
-        "الحرارة (C°)": round(new_t, 1),
         "الحمل (%)": round(load_pct, 1),
         "الحالة": status,
         "p": prio
     })
 
-# --- 5. الجدول الموحد والمفرز ---
-st.divider()
-st.subheader("📊 جدول البيانات اللحظي (مفرز حسب الأولوية)")
-df = pd.DataFrame(current_readings).sort_values("p")
+# --- 6. الجدول الموحد (المفرز أو المخربط) ---
+st.subheader("📋 جدول البيانات المستلمة")
+df = pd.DataFrame(current_readings)
 
-def apply_style(val):
-    if '🚨' in str(val): return 'background-color: #ff4b4b; color: white'
-    if '⚠️' in str(val): return 'background-color: #ffa500; color: black'
-    if '✅' in str(val): return 'background-color: #28a745; color: white'
-    return ''
+if protocol_on:
+    df = df.sort_values("p")
+    st.success("البروتوكول فعال: يتم استلام البيانات مفرزة ومنظمة.")
+else:
+    # محاكاة وصول البيانات بشكل عشوائي ومخربط بسبب الاختناق
+    df = df.sample(frac=1)
+    st.warning("تحذير: البيانات تصل بشكل عشوائي وغير مرتب نتيجة اختناق الشبكة.")
 
-st.table(df.drop(columns=['p']).style.applymap(apply_style, subset=['الحالة']))
+st.table(df.drop(columns=['p']).style.applymap(
+    lambda x: 'background-color: #ff4b4b; color: white' if '🚨' in str(x) or '🛑' in str(x) else 
+    ('background-color: #ffa500' if '⚠️' in str(x) else ''), subset=['الحالة']
+))
 
-# --- 6. الأرشيف التاريخي ---
-st.divider()
-st.subheader("📜 سجل الأرشفة الدائم")
-new_row = df.drop(columns=['p'])
-st.session_state.history = pd.concat([new_row, st.session_state.history], ignore_index=True).head(50)
-st.dataframe(st.session_state.history, use_container_width=True, hide_index=True)
+# إضافة للأرشفة
+st.session_state.history = pd.concat([df.drop(columns=['p']), st.session_state.history], ignore_index=True).head(50)
 
-time.sleep(1.5)
+# محاكاة التأخير الفعلي (Latency)
+time.sleep(delay if not protocol_on else 1)
 st.rerun()
