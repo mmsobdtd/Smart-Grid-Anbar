@@ -5,68 +5,75 @@ import time
 from datetime import datetime
 
 # إعدادات الصفحة
-st.set_page_config(page_title="Al-Anbar Smart Grid Control", layout="wide")
+st.set_page_config(page_title="Al-Anbar Grid - System Stability", layout="wide")
 
 # --- 1. تهيئة الذاكرة والسجلات ---
 if 'history' not in st.session_state:
     st.session_state.history = pd.DataFrame(columns=["الوقت", "المحطة", "التيار", "الحرارة", "الحمل", "الحالة"])
-if 'net_raw' not in st.session_state: st.session_state.net_raw = 0
-if 'net_proto' not in st.session_state: st.session_state.net_proto = 0
+if 'net_stress' not in st.session_state: st.session_state.net_stress = 0
 if 'transformers' not in st.session_state:
     st.session_state.transformers = {
         f"محولة {i}": {"active": True, "last_i": 60.0, "temp": 45.0, "reason": "طبيعي ✅"} for i in range(1, 6)
     }
 
 # --- 2. واجهة التحكم الرئيسية ---
-st.title("🖥️ وحدة السيطرة الموحدة - شبكة الأنبار الذكية")
-st.write(f"**المهندس المشرف:** محمد نبيل | **الموقع:** الرمادي | {datetime.now().strftime('%H:%M:%S')}")
+st.title("📟 مركز السيطرة والتحقق من استقرارية الشبكة - الأنبار")
+st.write(f"**المهندس:** محمد نبيل | **الحالة:** اختبار الضغط التشغيلي")
 
-# زر تبديل البروتوكول (هو المحرك الأساسي للنظام)
-protocol_on = st.toggle("🚀 تفعيل البروتوكول الذكي (فرز الأولوية + ضغط البيانات)", value=True)
+# المفتاح السحري للنظام
+protocol_on = st.toggle("🌐 تفعيل بروتوكول الحماية والفرز الذكي", value=True)
 
 st.divider()
 
-# --- 3. محاكاة ضغط البيانات والشبكة ---
-col_n1, col_n2 = st.columns(2)
-# إذا البروتوكول مفعل، نستهلك بيانات قليلة، إذا طافي نستهلك بيانات هواي
-inc_raw = np.random.randint(120, 200) 
-inc_proto = np.random.randint(15, 30)
+# --- 3. محاكاة الانهيار (The Collapse Logic) ---
+if not protocol_on:
+    # محاكاة انهيار النظام
+    st.session_state.net_stress += np.random.randint(20, 50)
+    
+    st.error("!!! CRITICAL SYSTEM FAILURE !!!")
+    st.markdown("""
+        <div style="background-color: #ff4b4b; padding: 20px; border-radius: 10px; text-align: center; color: white;">
+            <h1>⚠️ انهيار النظام (System Collapse)</h1>
+            <p>فشل في معالجة البيانات بسبب الإرسال العشوائي وضغط الشبكة العالي</p>
+            <p>البيانات غير مفرزة - وقت الاستجابة (Latency): INFINITE</p>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # إظهار شريط ضغط الشبكة وهو ينفجر
+    st.write("**مستوى اختناق الشبكة (Network Congestion):**")
+    st.progress(1.0) # شريط كامل أحمر
+    
+    if st.button("محاولة إعادة الاتصال الاضطراري"):
+        st.rerun()
+    
+    st.stop() # إيقاف بقية الكود عن العمل (هذا هو الانهيار الحقيقي)
 
-if protocol_on:
-    st.session_state.net_proto += inc_proto
-    data_vol = inc_proto
-    status_msg = "✅ بيانات مضغوطة ومنظمة"
 else:
-    st.session_state.net_raw += inc_raw
-    data_vol = inc_raw
-    status_msg = "⚠️ ضغط عالي (بيانات عشوائية)"
+    # إذا البروتوكول يعمل، نصفر الإجهاد تدريجياً
+    st.session_state.net_stress = max(0, st.session_state.net_stress - 10)
+    st.success("✅ النظام مستقر: البروتوكول يقوم بفرز البيانات وتقليل الضغط")
+    
+    col_n1, col_n2 = st.columns(2)
+    with col_n1:
+        st.metric("حجم البيانات", "18 KB/s", "كفاءة عالية")
+    with col_n2:
+        st.write("**ضغط الشبكة الحالي:**")
+        st.progress(0.15) # شريط منخفض يوضح الراحة في الشبكة
 
-with col_n1:
-    st.metric("حجم الإرسال الحالي", f"{data_vol} KB/s", status_msg)
-with col_n2:
-    total_net = st.session_state.net_proto if protocol_on else st.session_state.net_raw
-    st.write(f"**إجمالي البيانات المخزنة:** {total_net} KB")
-    st.progress(min(data_vol/200, 1.0))
-
-st.divider()
-
-# --- 4. معالجة بيانات المحولات ---
+# --- 4. معالجة بيانات المحولات (تعمل فقط إذا البروتوكول ON) ---
 current_readings = []
 max_cap = 150.0
 
-# كروت التحكم اليدوي (للفصل والتشغيل)
-st.subheader("🕹️ أزرار الفصل اليدوي")
+st.subheader("🕹️ وحدة التحكم اليدوي")
 t_cols = st.columns(5)
 
 for idx, (name, state) in enumerate(st.session_state.transformers.items()):
     if state["active"]:
-        # محاكاة البيانات
-        change = np.random.uniform(-5, 20)
+        change = np.random.uniform(-2, 15)
         new_i = max(0, min(180, state["last_i"] + change))
-        new_t = max(30, min(110, state["temp"] + (change * 0.3)))
+        new_t = max(30, min(105, state["temp"] + (change * 0.2)))
         load_pct = (new_i / max_cap) * 100
         
-        # تحديد مستوى الخطورة (prio)
         if load_pct > 95 or new_t > 90:
             status, prio = "🚨 خطر جداً", 1
         elif load_pct > 75:
@@ -79,18 +86,16 @@ for idx, (name, state) in enumerate(st.session_state.transformers.items()):
         new_i, new_t, load_pct, prio = 0.0, 30.0, 0.0, 4
         status = "🛑 مفصول يدوياً"
 
-    # أزرار التحكم في الكروت
     with t_cols[idx]:
         if state["active"]:
-            if st.button(f"OFF {name}", key=f"off_{name}", use_container_width=True):
+            if st.button(f"OFF {name}", key=f"off_{name}"):
                 state["active"] = False
                 st.rerun()
         else:
-            if st.button(f"ON {name}", key=f"on_{name}", use_container_width=True):
+            if st.button(f"ON {name}", key=f"on_{name}"):
                 state["active"] = True
                 st.rerun()
 
-    # إضافة للجدول
     current_readings.append({
         "المحطة": name,
         "التيار (A)": round(new_i, 1),
@@ -100,37 +105,25 @@ for idx, (name, state) in enumerate(st.session_state.transformers.items()):
         "p": prio
     })
 
-# --- 5. الجدول الموحد (الفرز حسب البروتوكول) ---
-st.subheader("📋 جدول البيانات والفرز اللحظي")
-df = pd.DataFrame(current_readings)
+# --- 5. الجدول الموحد والمفرز ---
+st.divider()
+st.subheader("📊 جدول البيانات اللحظي (مفرز حسب الأولوية)")
+df = pd.DataFrame(current_readings).sort_values("p")
 
-if protocol_on:
-    # الفرز الذكي (الخطر فوق)
-    df = df.sort_values("p")
-    st.info("💡 تم تفعيل البروتوكول: الجدول مفرز حسب الأولوية (الأخطر في الأعلى).")
-else:
-    # إرسال عشوائي (بدون فرز)
-    df = df.sample(frac=1).reset_index(drop=True)
-    st.warning("⚠️ إرسال عشوائي: البيانات غير مفرزة وتستهلك حجم إرسال كبير.")
-
-# تنسيق ألوان الجدول
 def apply_style(val):
-    if '🚨' in str(val): return 'background-color: #ff4b4b; color: white; font-weight: bold'
+    if '🚨' in str(val): return 'background-color: #ff4b4b; color: white'
     if '⚠️' in str(val): return 'background-color: #ffa500; color: black'
     if '✅' in str(val): return 'background-color: #28a745; color: white'
-    if '🛑' in str(val): return 'background-color: #721c24; color: white'
     return ''
 
 st.table(df.drop(columns=['p']).style.applymap(apply_style, subset=['الحالة']))
 
 # --- 6. الأرشيف التاريخي ---
 st.divider()
-st.subheader("📜 سجل الأرشفة (Data Logging)")
-# إضافة القراءات للسجل التاريخي
-new_history = pd.concat([df.drop(columns=['p']), st.session_state.history], ignore_index=True).head(100)
-st.session_state.history = new_history
+st.subheader("📜 سجل الأرشفة الدائم")
+new_row = df.drop(columns=['p'])
+st.session_state.history = pd.concat([new_row, st.session_state.history], ignore_index=True).head(50)
 st.dataframe(st.session_state.history, use_container_width=True, hide_index=True)
 
-# تحديث تلقائي
 time.sleep(1.5)
 st.rerun()
