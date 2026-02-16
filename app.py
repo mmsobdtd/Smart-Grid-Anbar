@@ -2,23 +2,25 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import time
-from datetime import datetime
 
 # إعدادات الصفحة
-st.set_page_config(page_title="مركز سيطرة الأنبار - محاكاة واقعية", layout="wide")
+st.set_page_config(page_title="مركز سيطرة الأنبار - إعداد محمد نبيل", layout="wide")
 
 # --- 1. تهيئة الذاكرة (Session State) ---
 if 'all_data_log' not in st.session_state:
-    st.session_state.all_data_log = pd.DataFrame(columns=["الوقت", "المحطة", "V", "I", "P (kW)", "PF", "Load%", "الحالة", "p"])
-if 'net_load' not in st.session_state: st.session_state.net_load = 10 # تبدأ بنسبة استقرار
+    # إزالة "الوقت" من الأعمدة
+    st.session_state.all_data_log = pd.DataFrame(columns=["المحطة", "V", "I", "P (kW)", "PF", "Load%", "الحالة", "p"])
+if 'net_load' not in st.session_state: st.session_state.net_load = 10 
 if 'transformers' not in st.session_state:
     st.session_state.transformers = {f"محولة {i}": {"active": True, "last_i": 70} for i in range(1, 6)}
 
 # --- 2. واجهة التحكم والعناوين ---
 st.title("🖥️ مركز سيطرة الأنبار - محاكاة تدفق البيانات المتزن")
-st.write(f"**المهندس المشرف:** محمد نبيل | **الحالة:** رصد حي | {datetime.now().strftime('%H:%M:%S')}")
+# تم تغيير الاسم وإزالة الوقت كما طلبت
+st.subheader("إعداد الطالب: محمد نبيل")
+st.write("**الحالة التشغيلية:** رصد حي للأحمال")
 
-# مفتاح البروتوكول
+# مفتاح البروتوكول في الجانب
 protocol_on = st.sidebar.toggle("🔐 تفعيل بروتوكول تحسين البيانات (Optimization)", value=True)
 
 if st.sidebar.button("♻️ إعادة تشغيل النظام"):
@@ -28,28 +30,25 @@ if st.sidebar.button("♻️ إعادة تشغيل النظام"):
 
 st.divider()
 
-# --- 3. محاكاة واقعية لتدفق البيانات (تم تعديل سرعة الانهيار) ---
+# --- 3. محاكاة استقرار الشبكة والانهيار التدريجي ---
 st.subheader("🌐 مراقبة استقرار الشبكة (Network Stability)")
 col_net1, col_net2, col_net3 = st.columns(3)
 
-# حساب عدد المحولات النشطة لإضافتها لمنطق الضغط
 active_count = sum(1 for t in st.session_state.transformers.values() if t["active"])
 
 if not protocol_on:
-    # إرسال عشوائي: الانهيار صار أبطأ (زيادة طفيفة 2-5 بدل 15)
-    # كلما زاد عدد المحولات النشطة، زاد الضغط
+    # الانهيار التدريجي (بدون بروتوكول)
     st.session_state.net_load += np.random.uniform(1.5, 3.5) * (active_count / 2)
     pps = np.random.randint(400, 550)
     latency = int(st.session_state.net_load * 15)
     net_status = "⚠️ اختناق تدريجي" if st.session_state.net_load < 90 else "🚨 خطر الانهيار"
 else:
-    # البروتوكول: يحافظ على الاستقرار ويقلل الإجهاد ببطء
+    # الاستقرار (مع بروتوكول)
     st.session_state.net_load = max(12, st.session_state.net_load - 4)
     pps = np.random.randint(30, 55)
     latency = np.random.randint(15, 35)
     net_status = "✅ مستقرة"
 
-# منع القيمة من تجاوز 100
 st.session_state.net_load = min(100, st.session_state.net_load)
 
 with col_net1:
@@ -67,7 +66,7 @@ if st.session_state.net_load >= 100:
 
 st.divider()
 
-# --- 4. توليد القراءات (أرقام نظيفة) ---
+# --- 4. توليد القراءات (أرقام نظيفة وبدون وقت) ---
 new_readings = []
 for name, state in st.session_state.transformers.items():
     if state["active"]:
@@ -84,17 +83,16 @@ for name, state in st.session_state.transformers.items():
         v, i_val, p_kw, pf, load_pct, status, prio = 0, 0, 0, 0, 0, "🛑 مفصول", 4
 
     new_readings.append({
-        "الوقت": datetime.now().strftime('%H:%M:%S'),
         "المحطة": name, "V": v, "I": i_val, "P (kW)": p_kw, 
         "PF": pf, "Load%": load_pct, "الحالة": status, "p": prio
     })
 
-# تحديث السجل
+# تحديث سجل البيانات الموحد
 new_df = pd.DataFrame(new_readings)
 st.session_state.all_data_log = pd.concat([new_df, st.session_state.all_data_log], ignore_index=True).head(500)
 
 # --- 5. التحكم اليدوي ---
-st.subheader("🕹️ وحدة التحكم اليدوي")
+st.subheader("🕹️ وحدة التحكم اليدوي (Manual Control)")
 c_btns = st.columns(5)
 for idx, name in enumerate(st.session_state.transformers):
     with c_btns[idx]:
@@ -107,12 +105,13 @@ for idx, name in enumerate(st.session_state.transformers):
                 st.session_state.transformers[name]["active"] = True
                 st.rerun()
 
-# --- 6. الجدول الموحد ---
-st.subheader("📋 سجل القراءات الموحد (Live Log)")
+# --- 6. الجدول الموحد (Live Feed) ---
+st.subheader("📋 سجل القراءات الموحد (المباشر والأرشيف)")
 display_df = st.session_state.all_data_log.copy()
 
 if protocol_on:
-    display_df = display_df.sort_values(["الوقت", "p"], ascending=[False, True])
+    # الفرز حسب الخطورة (p) أولاً
+    display_df = display_df.sort_values(["p"], ascending=[True])
 
 def style_row(val):
     if '🚨' in str(val): return 'background-color: #ff4b4b; color: white'
@@ -120,16 +119,18 @@ def style_row(val):
     if '✅' in str(val): return 'background-color: #d4edda'
     return ''
 
+# عرض أول 15 قراءة في السجل
 st.table(display_df.drop(columns=['p']).head(15).style.applymap(style_row, subset=['الحالة']))
 
 st.divider()
 
 # --- 7. استعلام تاريخي منفصل لكل محولة ---
-st.subheader("🔍 مراجعة السجل الخاص")
+st.subheader("🔍 مراجعة السجل الخاص لكل محولة")
 selected_trans = st.selectbox("اختر المحولة:", list(st.session_state.transformers.keys()))
 history_filtered = st.session_state.all_data_log[st.session_state.all_data_log["المحطة"] == selected_trans]
+# إظهار الجدول الخاص بدون عمود الوقت أيضاً
 st.dataframe(history_filtered.drop(columns=['p']), use_container_width=True, hide_index=True)
 
-# تأخير المحاكاة (أبطأ قليلاً لتعطيك وقت للشرح)
+# تأخير المحاكاة للوضوح
 time.sleep(1.8 if protocol_on else 1.0)
 st.rerun()
