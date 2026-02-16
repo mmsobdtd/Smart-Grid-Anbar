@@ -2,117 +2,133 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import time
+from datetime import datetime
 
-# إعدادات الصفحة - وضع الـ Wide ضروري لتكبير الجدول
-st.set_page_config(page_title="Al-Anbar Smart Grid Control", layout="wide")
+# إعدادات الصفحة
+st.set_page_config(page_title="مركز سيطرة الأنبار المتكامل", layout="wide")
 
-# --- تنسيق مخصص CSS لتكبير الخط والعناوين ---
+# --- تنسيق CSS مخصص ---
 st.markdown("""
     <style>
-    .main { background-color: #f5f7f9; }
-    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    th { font-size: 1.2rem !important; background-color: #1f77b4 !important; color: white !important; }
-    td { font-size: 1.1rem !important; font-weight: 500 !important; }
-    .stDataFrame { width: 100% !important; }
+    .stButton>button { width: 100%; border-radius: 5px; height: 3em; font-weight: bold; }
+    .trip-btn { background-color: #ff4b4b; color: white; }
+    th { background-color: #004a99 !important; color: white !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- محاكاة البيانات ---
-if 'net_raw' not in st.session_state: st.session_state.net_raw = 0
-if 'net_proto' not in st.session_state: st.session_state.net_proto = 0
+# --- تهيئة الذاكرة (Session State) ---
+if 'history' not in st.session_state:
+    st.session_state.history = pd.DataFrame(columns=["الوقت", "المحطة", "التيار", "الحرارة", "الحمل", "الحالة"])
+
+if 'trans_state' not in st.session_state:
+    st.session_state.trans_state = {
+        f"محولة {i}": {
+            "active": True, 
+            "last_i": 60.0, 
+            "temp": 45.0, 
+            "reason": "عمل طبيعي",
+            "is_manual": False
+        } for i in range(1, 5)
+    }
+
+# --- وظائف الحماية ---
+def trip_transformer(name, reason):
+    st.session_state.trans_state[name]["active"] = False
+    st.session_state.trans_state[name]["reason"] = reason
+    st.toast(f"🚨 عطل في {name}: {reason}", icon="🔥")
 
 # --- العنوان الرئيسي ---
-st.title("🏛️ غرفة السيطرة المركزية - كهرباء محافظة الأنبار")
-st.markdown("---")
+st.title("🛡️ نظام الأنبار للسيطرة والحماية والأرشفة الذكي")
+st.write(f"**المهندس المسؤول:** محمد نبيل | **توقيت النظام:** {datetime.now().strftime('%H:%M:%S')}")
 
-# --- أولاً: شريط ضغط البيانات (بشكل أوضح وعريض) ---
-st.subheader("📡 مراقبة تدفق البيانات (Network Traffic)")
-n_col1, n_col2 = st.columns(2)
+# --- القائمة الجانبية لإعادة التشغيل ---
+if st.sidebar.button("♻️ إعادة ضبط المنظومة وتشغيل الكل"):
+    for name in st.session_state.trans_state:
+        st.session_state.trans_state[name] = {"active": True, "last_i": 60.0, "temp": 45.0, "reason": "عمل طبيعي", "is_manual": False}
+    st.rerun()
 
-inc_raw = np.random.randint(100, 150)
-inc_proto = np.random.randint(10, 25)
-st.session_state.net_raw += inc_raw
-st.session_state.net_proto += inc_proto
+# --- قسم المعالجة والمحاكاة ---
+current_readings = []
+max_cap = 150.0 # السعة القصوى 150 أمبير
 
-with n_col1:
-    st.write("**⚠️ إرسال عشوائي (بدون بروتوكول)**")
-    st.progress(min(inc_raw/200, 1.0))
-    st.metric("الحجم التراكمي", f"{st.session_state.net_raw} KB", f"+{inc_raw} KB/s", delta_color="inverse")
-
-with n_col2:
-    st.write("**✅ إرسال ذكي (ببروتوكول)**")
-    st.progress(min(inc_proto/200, 1.0))
-    st.metric("الحجم التراكمي", f"{st.session_state.net_proto} KB", f"+{inc_proto} KB/s")
-
-st.markdown("---")
-
-# --- ثانياً: إعدادات الجدول والفرز ---
-t_col1, t_col2 = st.columns([2, 1])
-with t_col1:
-    st.subheader("📋 القراءات اللحظية للمحولات")
-with t_col2:
-    sort_on = st.toggle("🚀 تفعيل الفرز التلقائي (الأخطر أولاً)", value=True)
-
-# توليد بيانات المحولات
-data_list = []
-for i in range(1, 7): # عرض 6 محولات لملء الشاشة
-    v = np.random.uniform(210, 230)
-    # محاكاة حالة خطر عشوائية لمحولة واحدة على الأقل لبيان الفرز
-    if i == 2: i_val = np.random.uniform(135, 155)
-    else: i_val = np.random.uniform(40, 120)
-    
-    t = np.random.uniform(40, 95)
-    load_pct = (i_val / 150) # كنسبة مئوية من 1
-    loss = (i_val**2 * 0.05) / 1000
-    
-    # تحديد الحالة والأولوية
-    if load_pct >= 0.9 or t >= 85:
-        status, priority, icon = "🚨 خطر جداً", 1, "🔴"
-    elif load_pct >= 0.75:
-        status, priority, icon = "⚠️ تحذير حمل", 2, "🟡"
+for name, state in st.session_state.trans_state.items():
+    if state["active"]:
+        # محاكاة تغير التيار
+        change = np.random.uniform(-5, 8)
+        # محاكاة "Short Circuit" عشوائي (احتمال 2%)
+        if np.random.rand() < 0.02: change = 60 
+        
+        new_i = max(0, min(170, state["last_i"] + change))
+        new_t = max(30, min(110, state["temp"] + (change * 0.3)))
+        
+        load_pct = (new_i / max_cap) * 100
+        
+        # --- منطق الحماية التلقائي ---
+        if new_i - state["last_i"] > 50: # حماية من الارتفاع المفاجئ (Short Circuit)
+            trip_transformer(name, "ارتفاع مفاجئ (Short Circuit)")
+        elif load_pct > 95:
+            trip_transformer(name, "تجاوز الحمل 95%")
+        elif new_t > 90:
+            trip_transformer(name, "ارتفاع حرارة حررجي")
+        
+        state["last_i"] = new_i
+        state["temp"] = new_t
     else:
-        status, priority, icon = "✅ عمل طبيعي", 3, "🟢"
+        new_i, new_t, load_pct = 0.0, 30.0, 0.0
 
-    data_list.append({
-        "المحطة": f"محولة {i} {icon}",
-        "الجهد (V)": round(v, 1),
-        "التيار (A)": round(i_val, 1),
-        "الحرارة (C°)": round(t, 1),
-        "الخسائر (kW)": round(loss, 3),
-        "مستوى الحمل": load_pct, # سيتم عرضه كـ Progress Bar
-        "الحالة": status,
-        "p": priority
-    })
+    # تسجيل القراءة الحالية
+    reading = {
+        "الوقت": datetime.now().strftime('%H:%M:%S'),
+        "المحطة": name,
+        "التيار": round(new_i, 1),
+        "الحرارة": round(new_t, 1),
+        "الحمل": round(load_pct, 1),
+        "الحالة": state["reason"] if not state["active"] else "طبيعي ✅"
+    }
+    current_readings.append(reading)
+    
+    # إضافة للسجل التاريخي (الأرشفة)
+    new_row = pd.DataFrame([reading])
+    st.session_state.history = pd.concat([new_row, st.session_state.history], ignore_index=True).head(100)
 
-df = pd.DataFrame(data_list)
-if sort_on:
-    df = df.sort_values("p")
+# --- عرض الجدول الرئيسي (Real-time Dashboard) ---
+st.subheader("📊 لوحة القراءات اللحظية وأزرار التحكم")
+df_now = pd.DataFrame(current_readings)
 
-# --- عرض الجدول بأقصى حجم وأوضح تنسيق ---
+# إنشاء أعمدة لعرض أزرار الفصل اليدوي
+cols = st.columns(len(st.session_state.trans_state))
+for idx, name in enumerate(st.session_state.trans_state):
+    with cols[idx]:
+        st.markdown(f"### {name}")
+        st.metric("الحمل", f"{df_now.iloc[idx]['الحمل']}%")
+        if st.session_state.trans_state[name]["active"]:
+            if st.button(f"🔴 فصل يدوياً", key=f"btn_{name}"):
+                st.session_state.trans_state[name]["active"] = False
+                st.session_state.trans_state[name]["reason"] = "فصل يدوي من الإدارة"
+                st.rerun()
+        else:
+            st.error("مفصول")
+
+st.divider()
+
+# عرض الجدول الرئيسي بتنسيق واضح
 st.dataframe(
-    df.drop(columns=['p']),
+    df_now,
     column_config={
-        "مستوى الحمل": st.column_config.ProgressColumn(
-            "مستوى الحمل (%)",
-            help="نسبة الاستهلاك من السعة الكلية للمحولة",
-            format="%.0f%%",
-            min_value=0,
-            max_value=1,
-        ),
-        "المحطة": st.column_config.TextColumn("اسم المحطة", width="medium"),
-        "الحالة": st.column_config.TextColumn("التشخيص الآلي", width="medium"),
+        "الحمل": st.column_config.ProgressColumn("مستوى الحمل %", min_value=0, max_value=100, format="%d%%"),
+        "التيار": st.column_config.NumberColumn("التيار (A)"),
+        "الحرارة": st.column_config.NumberColumn("الحرارة (C°)")
     },
     use_container_width=True,
-    hide_index=True,
-    height=400 # تحديد ارتفاع مناسب للجدول
+    hide_index=True
 )
 
-# --- تذييل الصفحة ---
-if sort_on and df.iloc[0]['p'] == 1:
-    st.toast(f"تحذير: {df.iloc[0]['المحطة']} في حالة حرجة!", icon="🚨")
+# --- قسم الأرشيف (Historical Data) ---
+st.divider()
+st.subheader("📜 سجل البيانات التاريخي (الأرشفة)")
+st.write("هذا الجدول يحفظ القراءات السابقة ولا يحذفها لمراجعة سجل المحولات:")
+st.dataframe(st.session_state.history, use_container_width=True, hide_index=True)
 
-st.info(f"💡 ملاحظة: الجدول يتم فرزه لحظياً. المحولات ذات اللون الأحمر تظهر في الأعلى تلقائياً لاتخاذ إجراء الفصل.")
-
-time.sleep(1)
+# تحديث آلي
+time.sleep(1.5)
 st.rerun()
-    
