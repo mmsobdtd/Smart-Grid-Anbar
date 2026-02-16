@@ -2,65 +2,72 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import time
+from datetime import datetime
 
 # إعدادات الصفحة
-st.set_page_config(page_title="Network & Grid Control - Anbar", layout="wide")
+st.set_page_config(page_title="مركز سيطرة الأنبار - فرز الأولوية", layout="wide")
 
-# --- محاكاة استهلاك البيانات (Network Traffic) ---
+# --- محاكاة استهلاك البيانات ---
 if 'total_data_no_proto' not in st.session_state:
     st.session_state.total_data_no_proto = 0
     st.session_state.total_data_with_proto = 0
 
 # --- العنوان ---
-st.title("🌐 مركز مراقبة الشبكة والبيانات - الأنبار")
-st.write("**المهندس المنفذ:** محمد نبيل | **جامعة الأنبار - كلية الهندسة**")
+st.title("🛡️ نظام السيطرة والفرز الذكي - محافظة الأنبار")
+st.write(f"**إشراف المهندس:** محمد نبيل | **الحالة:** مراقبة مباشرة | **الوقت:** {datetime.now().strftime('%H:%M:%S')}")
 
-# --- قسم مقارنة ضغط الشبكة (Network Stress Section) ---
-st.subheader("📊 تحليل ضغط البيانات المرسلة (Network Throughput)")
-
+# --- قسم مقارنة ضغط الشبكة ---
 col_n1, col_n2 = st.columns(2)
-
-# حساب الزيادة في البيانات لكل ثانية (محاكاة)
-# بدون بروتوكول: بيانات كثيرة وعشوائية
 inc_no_proto = np.random.randint(80, 120) 
-# مع بروتوكول: بيانات منظمة وأقل حجماً
 inc_with_proto = np.random.randint(15, 30) 
-
 st.session_state.total_data_no_proto += inc_no_proto
 st.session_state.total_data_with_proto += inc_with_proto
 
 with col_n1:
-    st.write("📡 **بدون بروتوكول (Raw Data Stream)**")
-    # شريط ضغط الشبكة (أحمر لأنه يستهلك باندويث عالي)
+    st.write("📡 **بدون بروتوكول (إرسال عشوائي)**")
     st.progress(min(inc_no_proto / 150, 1.0))
-    st.metric("حجم البيانات الكلي", f"{st.session_state.total_data_no_proto} KB", f"+{inc_no_proto} KB/s", delta_color="inverse")
+    st.caption(f"تراكم البيانات: {st.session_state.total_data_no_proto} KB")
 
 with col_n2:
-    st.write("🔐 **ببروتوكول ذكي (MQTT/Optimization)**")
-    # شريط ضغط الشبكة (أخضر لأنه كفوء)
+    st.write("🔐 **ببروتوكول ذكي (إرسال منظم)**")
     st.progress(min(inc_with_proto / 150, 1.0))
-    st.metric("حجم البيانات الكلي", f"{st.session_state.total_data_with_proto} KB", f"+{inc_with_proto} KB/s")
-
-# عرض الفرق (الاستثمار في كفاءة البيانات)
-efficiency = 100 - (inc_with_proto / inc_no_proto * 100)
-st.success(f"💡 **النتيجة:** استخدام البروتوكول قلل ضغط الشبكة بنسبة **{efficiency:.1f}%** مقارنة بالإرسال العشوائي.")
+    st.caption(f"تراكم البيانات: {st.session_state.total_data_with_proto} KB")
 
 st.divider()
 
-# --- جدول قراءات المحولات ---
-st.subheader("📋 جدول مراقبة المحولات اللحظي")
+# --- قسم الجدول والتحكم بالفرز ---
+col_header, col_toggle = st.columns([3, 1])
 
+with col_header:
+    st.subheader("📋 جدول مراقبة المحولات اللحظي")
+
+with col_toggle:
+    # الزر الذي طلبته: تفعيل بروتوكول الفرز حسب الخطورة
+    sort_active = st.toggle("تفعيل فرز الأولوية (الخطر أولاً)", value=True)
+
+# توليد بيانات المحولات
 transformers = []
-for i in range(1, 5):
-    v = np.random.uniform(218, 222)
-    i_val = np.random.uniform(40, 145)
-    t = np.random.uniform(45, 88)
+for i in range(1, 6): # زدت عدد المحولات لتوضيح الفرز بشكل أفضل
+    v = np.random.uniform(215, 225)
+    # محاكاة أحمال مختلفة للمحولات
+    if i == 1: i_val = np.random.uniform(135, 155) # نجعل محولة 1 غالباً في خطر
+    elif i == 3: i_val = np.random.uniform(115, 130) # نجعل محولة 3 في تحذير
+    else: i_val = np.random.uniform(40, 100)
+    
+    t = np.random.uniform(40, 90)
     load = (i_val / 150) * 100
     loss = (i_val**2 * 0.05) / 1000
     
-    status = "طبيعي ✅"
-    if load > 90 or t > 80: status = "خطر 🚩"
-    elif load > 75: status = "تحذير ⚠️"
+    # تحديد الحالة والرقم التعريفي للفرز
+    if load >= 90 or t >= 85:
+        status = "خطر 🚩"
+        priority = 1 # أعلى أولوية
+    elif load >= 75:
+        status = "تحذير ⚠️"
+        priority = 2
+    else:
+        status = "طبيعي ✅"
+        priority = 3
 
     transformers.append({
         "المحطة": f"محولة {i}",
@@ -69,25 +76,34 @@ for i in range(1, 5):
         "الحرارة (C°)": f"{t:.1f}",
         "الخسائر (kW)": f"{loss:.3f}",
         "نسبة الحمل": f"{load:.1f}%",
-        "الحالة": status
+        "الحالة": status,
+        "priority": priority # حقل مخفي للفرز
     })
 
 df = pd.DataFrame(transformers)
 
-# تنسيق الجدول بشكل احترافي
+# --- منطق الفرز حسب طلبك ---
+if sort_active:
+    # فرز الجدول بناءً على حقل الـ priority
+    df = df.sort_values(by="priority")
+
+# حذف عمود الـ priority قبل العرض ليبقى الجدول نظيفاً
+df_display = df.drop(columns=['priority'])
+
+# تنسيق الألوان
 def style_status(val):
-    if 'خطر' in val: return 'background-color: #ff4b4b; color: white'
-    if 'تحذير' in val: return 'background-color: #ffa500'
+    if 'خطر' in val: return 'background-color: #ff4b4b; color: white; font-weight: bold'
+    if 'تحذير' in val: return 'background-color: #ffa500; color: black'
     if 'طبيعي' in val: return 'background-color: #28a745; color: white'
     return ''
 
-st.table(df.style.applymap(style_status, subset=['الحالة']))
+# عرض الجدول
+st.table(df_display.style.applymap(style_status, subset=['الحالة']))
 
-# زر لإعادة تصوير البيانات
-if st.sidebar.button("تصفير سجل البيانات"):
-    st.session_state.total_data_no_proto = 0
-    st.session_state.total_data_with_proto = 0
-    st.rerun()
+# --- تذييل الصفحة ---
+st.divider()
+st.info(f"💡 **ملاحظة:** {'نظام الفرز الذكي قيد التشغيل. يتم دفع المحولات الأكثر خطورة إلى أعلى القائمة لضمان سرعة الاستجابة.' if sort_active else 'نظام الفرز معطل. يتم عرض المحولات بترتيبها التسلسلي.'}")
 
+# تحديث تلقائي كل ثانية
 time.sleep(1)
 st.rerun()
