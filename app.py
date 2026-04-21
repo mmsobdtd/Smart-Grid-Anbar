@@ -9,7 +9,8 @@ st.set_page_config(page_title="Al-Anbar Grid - Dynamic Sorting", layout="wide")
 # --- 1. تهيئة الذاكرة والسجلات ---
 if 'all_data_log' not in st.session_state:
     st.session_state.all_data_log = pd.DataFrame(columns=["المحطة", "V", "I", "P (kW)", "PF", "Load%", "الحالة", "p"])
-if 'net_load' not in st.session_state: st.session_state.net_load = 15 
+if 'net_load' not in st.session_state: 
+    st.session_state.net_load = 15 
 if 'transformers' not in st.session_state:
     st.session_state.transformers = {f"محولة {i}": {"active": True, "last_i": 75} for i in range(1, 6)}
 
@@ -60,23 +61,25 @@ with col_net3:
 
 if st.session_state.net_load >= 100:
     st.error("🆘 !!! CRITICAL NETWORK FAILURE: BUFFER OVERFLOW !!!")
+    if st.button("إعادة محاولة الاتصال"):
+        st.session_state.net_load = 15
+        st.rerun()
     st.stop()
 
 st.divider()
 
-# --- 4. توليد ومعالجة البيانات (الفرز يتم في كل دورة) ---
-current_batch = [] # مصفوفة لتخزين القراءات الحالية فقط وفرزها
+# --- 4. توليد ومعالجة البيانات ---
+current_batch = [] 
 
 for name, state in st.session_state.transformers.items():
     if state["active"]:
         v = int(np.random.uniform(219, 226))
-        # جعل القيم متغيرة باستمرار لإظهار حركة الفرز
         i_val = int(np.random.uniform(60, 155))
         pf = round(np.random.uniform(0.86, 0.94), 2)
         p_kw = int((v * i_val * pf) / 1000)
         load_pct = int((i_val / 150) * 100)
         
-        # تحديد الأولوية والحالة
+        # منطق تحديد الأولوية
         if load_pct >= 95: status, prio = "🚨 خطر جداً", 1
         elif load_pct >= 80: status, prio = "⚠️ تنبيه حمل", 2
         else: status, prio = "✅ طبيعي", 3
@@ -90,26 +93,25 @@ for name, state in st.session_state.transformers.items():
         "PF": pf, "Load%": load_pct, "الحالة": status, "p": prio
     })
 
-# تحويل الدفعة الحالية لجدول
-df_batch = pd.DataFrame(current_readings if 'current_readings' in locals() else current_batch)
+df_batch = pd.DataFrame(current_batch)
 
-# --- 5. منطق الفرز الديناميكي (مع كل إرسال) ---
+# --- 5. منطق الفرز الديناميكي ---
 if protocol_on:
-    # فرز الدفعة الحالية فوراً: الخطر ثم التنبيه ثم الطبيعي
+    # الفرز حسب عمود p (الأقل قيمة تعني أولوية أعلى)
     df_batch = df_batch.sort_values(by="p", ascending=True)
 else:
-    # إرسال عشوائي: خلط الترتيب (Chaos Mode)
+    # وضع الفوضى (Chaos Mode)
     df_batch = df_batch.sample(frac=1).reset_index(drop=True)
 
-# إضافة هذه الدفعة للسجل التاريخي الكلي (بدون فرز التاريخ)
+# تحديث السجل التاريخي
 st.session_state.all_data_log = pd.concat([df_batch, st.session_state.all_data_log], ignore_index=True).head(500)
 
-# --- 6. عرض أزرار التحكم والجدول الديناميكي ---
+# --- 6. عرض أزرار التحكم ---
 st.subheader("🕹️ وحدة السيطرة اللحظية")
 c_btns = st.columns(5)
-for idx, name in enumerate(st.session_state.transformers):
+for idx, (name, state) in enumerate(st.session_state.transformers.items()):
     with c_btns[idx]:
-        if st.session_state.transformers[name]["active"]:
+        if state["active"]:
             if st.button(f"فصل {name}", key=f"off_{idx}"):
                 st.session_state.transformers[name]["active"] = False
                 st.rerun()
@@ -120,7 +122,7 @@ for idx, name in enumerate(st.session_state.transformers):
 
 st.divider()
 
-# عرض جدول القراءات الحالية المفرزة
+# --- 7. عرض الجدول الديناميكي الملون ---
 st.subheader("📋 جدول الرصد الديناميكي (تحديث وفرز لحظي)")
 
 def style_row(val):
@@ -130,17 +132,17 @@ def style_row(val):
     if '🛑' in str(val): return 'background-color: #721c24; color: white'
     return ''
 
-st.table(df_batch.drop(columns=['p']).style.applymap(style_row, subset=['الحالة']))
-
+# عرض الجدول مع تطبيق التنسيق الشرطي
+st.write(df_batch.drop(columns=['p']).style.map(style_row, subset=['الحالة']))
 
 st.divider()
 
-# --- 7. مراجعة السجل الخاص ---
+# --- 8. مراجعة السجل الخاص ---
 st.subheader("🔍 مراجعة السجل التاريخي (الأرشفة)")
-selected_trans = st.selectbox("اختر المحولة:", list(st.session_state.transformers.keys()))
+selected_trans = st.selectbox("اختر المحولة للمراجعة:", list(st.session_state.transformers.keys()))
 history_filtered = st.session_state.all_data_log[st.session_state.all_data_log["المحطة"] == selected_trans]
 st.dataframe(history_filtered.drop(columns=['p']), use_container_width=True, hide_index=True)
 
-# سرعة التحديث (1.5 ثانية لإظهار حركة الفرز)
+# توقيت التحديث اللحظي
 time.sleep(1.5)
 st.rerun()
