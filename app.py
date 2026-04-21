@@ -132,6 +132,7 @@ def style_row(val):
 
 st.table(df_batch.drop(columns=['p']).style.applymap(style_row, subset=['الحالة']))
 
+
 st.divider()
 
 # --- 7. مراجعة السجل الخاص ---
