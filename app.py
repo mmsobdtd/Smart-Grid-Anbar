@@ -2,120 +2,123 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
-import plotly.graph_objects as go
 import time
 
-# --- إعدادات رصانة المشروع ---
-st.set_page_config(page_title="Anbar Pro-Grid ADMS", layout="wide")
+# إعدادات الصفحة لتشبه أنظمة SCADA العالمية
+st.set_page_config(page_title="Anbar ADMS Pro", layout="wide")
 
-# دالة لتوليد أحمال واقعية متذبذبة
-def generate_real_data(n_houses, theft_active, theft_val, theft_house_idx):
-    # تصنيف البيوت (30% حمل خفيف، 50% متوسط، 20% عالٍ)
-    categories = np.random.choice(['Light', 'Medium', 'Heavy'], size=n_houses, p=[0.3, 0.5, 0.2])
-    currents = []
-    for cat in categories:
-        if cat == 'Light': currents.append(np.random.uniform(1, 5))
-        elif cat == 'Medium': currents.append(np.random.uniform(5, 15))
-        else: currents.append(np.random.uniform(15, 35))
-    
-    # إضافة التذبذب اللحظي
-    currents = np.array(currents) + np.random.uniform(-0.5, 0.5, n_houses)
-    currents = np.maximum(currents, 0.5) # لضمان عدم وجود تيار سالب
-    
-    # توزيع متزن على الفازات (R, S, T)
-    phases = ['R', 'S', 'T'] * (n_houses // 3) + ['R', 'S'][:n_houses % 3]
-    np.random.shuffle(phases)
-    
-    df = pd.DataFrame({'House_ID': [f"H-{i+1:02d}" for i in range(n_houses)], 
-                       'Phase': phases, 'Meter_Current': currents})
-    
-    # حساب قيم المحولة (Transformer)
-    trans_data = df.groupby('Phase')['Meter_Current'].sum().to_dict()
-    
-    # إضافة التجاوز في المحولة فقط (لا يظهر في العدادات)
-    theft_info = {"Value": 0, "Phase": None, "House": None}
-    if theft_active:
-        theft_p = df.iloc[theft_house_idx]['Phase']
-        trans_data[theft_p] += theft_val
-        theft_info = {"Value": theft_val, "Phase": theft_p, "House": df.iloc[theft_house_idx]['House_ID']}
-        
-    return df, trans_data, theft_info
+st.title("⚡ نظام إدارة الأحمال وكشف التجاوزات - مركز سيطرة الرمادي")
+st.markdown("---")
 
-# --- واجهة المستخدم ---
-st.title("🏛️ منصة إدارة الشبكة المتقدمة - جامعة الأنبار")
-st.markdown("#### نظام ADMS لمراقبة ميزان القوى وكشف الضياعات غير الفنية")
+# --- 1. بناء هيكلية الشبكة (5 خطوط/قطاعات) ---
+# كل خط يحتوي على 10 منازل موزعة على 3 فازات
+sectors = ['قطاع التأميم', 'قطاع الأندلس', 'قطاع الملعب', 'قطاع الورار', 'قطاع الجزيرة']
+if 'base_loads' not in st.session_state:
+    # توليد أحمال أساسية ثابتة لكل بيت لضمان الاستقرارية
+    st.session_state.base_loads = np.random.uniform(5, 20, 50) 
 
-# السيّدبار للتحكم العميق
+# --- 2. التحكم في المحاكاة عبر القائمة الجانبية ---
 with st.sidebar:
-    st.header("🎮 لوحة التحكم بالبث الحي")
-    live_mode = st.toggle("تفعيل البث اللحظي (Live Simulation)", value=True)
+    st.header("🎮 لوحة التحكم بالحقن")
+    inject_theft = st.toggle("تفعيل حالة تجاوز (Injection)")
+    if inject_theft:
+        theft_sector = st.selectbox("اختر القطاع المستهدف", sectors)
+        theft_phase = st.selectbox("اختر الفاز المستهدف", ['R', 'S', 'T'])
+        theft_val = st.slider("قيمة التجاوز (Amps)", 20, 100, 50)
+    else:
+        theft_sector, theft_phase, theft_val = None, None, 0
+    
     st.divider()
-    st.subheader("⚠️ سيناريو التجاوز")
-    theft_toggle = st.checkbox("حقن تجاوز في الشبكة (Inject Theft)")
-    theft_amount = st.slider("قيمة التجاوز (Amps)", 10, 100, 40)
-    theft_h_idx = st.number_input("موقع التجاوز (Index)", 0, 49, 21)
-    st.divider()
-    st.write("**الحالة الفنية:** متصل ببروكر MQTT (افتراضي)")
+    update_speed = st.slider("سرعة التحديث (ثواني)", 1, 5, 2)
 
-# حاويات العرض المتغيرة
+# --- 3. محرك المحاكاة اللحظي ---
 placeholder = st.empty()
 
-# حلقة المحاكاة اللحظية
 while True:
-    df_houses, trans_dict, theft_details = generate_real_data(50, theft_toggle, theft_amount, theft_h_idx)
+    # توليد تذبذب طفيف جداً (0.5%) لضمان واقعية القراءات (أحمال مستقرة)
+    fluctuation = np.random.uniform(0.99, 1.01, 50)
+    current_loads = st.session_state.base_loads * fluctuation
     
-    # حسابات هندسية رصينة
-    v_line = 220
-    p_meters = (df_houses['Meter_Current'].sum() * v_line) / 1000 # kW
-    p_trans = (sum(trans_dict.values()) * v_line * 1.02) / 1000 # kW (2% ضياع فني ثابت)
+    # توزيع المنازل على القطاعات والفازات
+    data = []
+    for i in range(50):
+        sector = sectors[i // 10]
+        phase = ['R', 'S', 'T'][i % 3]
+        data.append({
+            'ID': f"M-{i+1:02d}",
+            'Sector': sector,
+            'Phase': phase,
+            'Meter_Current': current_loads[i]
+        })
     
-    # حساب معامل عدم الاتزان (VUF)
-    i_vals = list(trans_dict.values())
-    i_avg = np.mean(i_vals)
-    unbalance = (max([abs(x - i_avg) for x in i_vals]) / i_avg) * 100
-
-    with placeholder.container():
-        # 1. المربعات القياسية (KPIs)
-        kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-        kpi1.metric("إجمالي حمل المحولة", f"{p_trans:.2f} kW")
-        kpi2.metric("مجموع العدادات الذكية", f"{p_meters:.2f} kW")
-        kpi3.metric("تيار المتعادل (In)", f"{np.std(i_vals):.2f} A")
-        kpi4.metric("معامل عدم الاتزان", f"{unbalance:.1f}%", delta="-2.1%" if unbalance < 10 else "+5.4%", delta_color="inverse")
-
-        # 2. الرسم البياني للمتجهات (Phasor Diagram) - قمة الرصانة الهندسية
-        st.write("---")
-        c_left, c_right = st.columns([2, 1])
+    df = pd.DataFrame(data)
+    
+    # حساب ميزان القوى لكل فاز ولكل قطاع
+    # 1. مجموع العدادات (القانوني)
+    meter_totals = df.groupby(['Sector', 'Phase'])['Meter_Current'].sum().reset_index()
+    
+    # 2. قراءة المحولة (تشمل التجاوز إذا وجد + ضياع فني 2%)
+    transformer_readings = []
+    for _, row in meter_totals.iterrows():
+        real_val = row['Meter_Current'] * 1.02 # ضياع فني ثابت
+        is_theft = (row['Sector'] == theft_sector and row['Phase'] == theft_phase)
+        if is_theft:
+            real_val += theft_val
         
-        with c_left:
-            st.subheader("🏠 التوزيع الحي لأحمال 50 منزلاً")
-            fig_h = px.bar(df_houses, x='House_ID', y='Meter_Current', color='Phase',
-                           color_discrete_map={'R':'#FF4136', 'S':'#FF851B', 'T':'#0074D9'},
-                           title="قراءات العدادات اللحظية (Amps)")
-            fig_h.update_layout(height=400)
-            st.plotly_chart(fig_h, use_container_width=True)
+        transformer_readings.append({
+            'Sector': row['Sector'],
+            'Phase': row['Phase'],
+            'Trans_Current': real_val,
+            'Is_Theft': is_theft
+        })
+    
+    df_trans = pd.DataFrame(transformer_readings)
 
-        with c_right:
-            st.subheader("📈 توازن فازات المحولة")
-            fig_p = go.Figure(go.Bar(x=['Phase R', 'Phase S', 'Phase T'], 
-                                   y=[trans_dict['R'], trans_dict['S'], trans_dict['T']],
-                                   marker_color=['#FF4136', '#FF851B', '#0074D9']))
-            fig_p.update_layout(height=400)
-            st.plotly_chart(fig_p, use_container_width=True)
+    # --- 4. واجهة العرض Dashboard ---
+    with placeholder.container():
+        # الصف الأول: مؤشرات الحالة العامة
+        m1, m2, m3, m4 = st.columns(4)
+        total_p_meters = df['Meter_Current'].sum() * 220 / 1000
+        total_p_trans = df_trans['Trans_Current'].sum() * 220 / 1000
+        
+        m1.metric("حمل المحولة الكلي", f"{total_p_trans:.1f} kW")
+        m2.metric("الحمل المستلم (عدادات)", f"{total_p_meters:.1f} kW")
+        m3.metric("استقرارية التردد", "50.01 Hz")
+        m4.metric("حالة الشبكة", "مستقرة" if not inject_theft else "حرجة", 
+                  delta="-تجاوز مكتشف" if inject_theft else None, delta_color="inverse")
 
-        # 3. محرك كشف التجاوز الذكي
-        if theft_toggle:
-            diff = p_trans - (p_meters + (p_trans * 0.02)) # الفرق بعد طرح الضياع الفني
-            if diff > 5:
+        # الصف الثاني: الرسوم البيانية
+        c1, c2 = st.columns([2, 1])
+        
+        with c1:
+            st.subheader("📍 مراقبة الأحمال حسب القطاعات (Feeders)")
+            fig_sec = px.bar(df, x='Sector', y='Meter_Current', color='Phase', 
+                             barmode='group', title="توزيع الأحمال القانونية على الفازات لكل قطاع")
+            st.plotly_chart(fig_sec, use_container_width=True)
+            
+        with c2:
+            st.subheader("⚖️ اتزان فازات المحولة المركزية")
+            phase_sums = df_trans.groupby('Phase')['Trans_Current'].sum()
+            fig_phase = px.pie(values=phase_sums, names=phase_sums.index, 
+                               color=phase_sums.index, color_discrete_map={'R':'red', 'S':'orange', 'T':'blue'})
+            st.plotly_chart(fig_phase, use_container_width=True)
+
+        # الصف الثالث: تقرير كشف التجاوزات (الجزء الأهم للدكتور)
+        st.markdown("### 📋 سجل الحوادث وتحليل الأعطال (Incident Report)")
+        
+        # خوارزمية كشف الفرق
+        for index, row in df_trans.iterrows():
+            meter_val = meter_totals[(meter_totals['Sector'] == row['Sector']) & 
+                                     (meter_totals['Phase'] == row['Phase'])]['Meter_Current'].values[0]
+            diff = row['Trans_Current'] - (meter_val * 1.02)
+            
+            if diff > 10: # إذا كان الفرق أكبر من 10 أمبير (تجاوز)
                 st.error(f"""
-                ### 🚨 إنذار: تم كشف تجاوز (Non-Technical Loss)
-                - **الفاز المصاب:** {theft_details['Phase']}
-                - **القيمة التقديرية:** {theft_amount} Amps
-                - **موقع الاحتباه:** المنطقة القريبة من العداد {theft_details['House']}
-                - **التوصية:** إرسال فريق تفتيش فوراً إلى قطاع 'حي الأندلس - زقاق 12'.
+                **🚨 تنبيه أمني:** تم كشف تجاوز في **{row['Sector']}** | **الفاز {row['Phase']}** - القيمة المسربة: **{diff:.2f} أمبير** - الإجراء: جاري تحديد النقطة بدقة وإرسال إشعار لمركز صيانة الرمادي.
                 """)
-        else:
-            st.success("🔒 أمن الشبكة: لا توجد فروقات غير مفسرة بين الخارج والمستلم.")
+        
+        if not inject_theft:
+            st.success("✅ جميع الخطوط تعمل ضمن المعايير الفنية المسموحة.")
 
-    if not live_mode:
-        break
-    time.sleep(2) # تحديث كل ثانيتين ليعطي شعور البث الحي
+    time.sleep(update_speed)
+    
