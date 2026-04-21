@@ -5,119 +5,164 @@ import plotly.express as px
 import plotly.graph_objects as go
 import time
 
-# إعداد الصفحة بنمط Dark Mode احترافي
-st.set_page_config(page_title="Anbar Smart Grid - Research Grade", layout="wide")
+# --- إعدادات الواجهة الاحترافية ---
+st.set_page_config(page_title="Anbar Smart Grid - Enterprise Edition", layout="wide")
 
-st.title("⚡ منصة الأنبار المتقدمة لإدارة الشبكة وكشف التجاوزات")
+st.title("⚡ مركز السيطرة الذكي لشبكات التوزيع - الإصدار المتقدم")
+st.markdown("نظام (ADMS) متكامل يتضمن: موازنة الأحمال، كشف التجاوزات، التحليل الاقتصادي، والحماية الآلية.")
 st.write("---")
 
-# --- 1. إعداد البيانات والقطاعات ---
+# --- 1. إعداد البيانات الأساسية ---
 if 'base_data' not in st.session_state:
-    st.session_state.base_data = np.random.uniform(10, 30, 50)
+    st.session_state.base_data = np.random.uniform(10, 25, 50) # أحمال البيوت بالأساس
 
-sectors = ['القطاع A (شمال الرمادي)', 'القطاع B (وسط المدينة)', 'القطاع C (حي الملعب)', 'القطاع D (التأميم)', 'القطاع E (الورار)']
+sectors = ['قطاع A (تجاري)', 'قطاع B (سكني)', 'قطاع C (مستشفى/حيوي)', 'قطاع D (سكني)', 'قطاع E (صناعي)']
 
-# --- 2. القائمة الجانبية للتحكم ---
+# --- 2. لوحة التحكم والمدخلات الاقتصادية ---
 with st.sidebar:
-    st.header("🎮 لوحة محاكاة التجاوز")
-    inject = st.toggle("تفعيل حقن تجاوز في الشبكة")
+    st.header("🎮 محاكي الشبكة المركزية")
+    
+    st.subheader("⚠️ سيناريوهات الأعطال")
+    inject = st.toggle("حقن تجاوز (Non-Technical Loss)", value=False)
     if inject:
-        sel_sector = st.selectbox("اختر قطاع التجاوز", sectors)
-        sel_phase = st.radio("اختر الفاز المصاب", ['R', 'S', 'T'])
-        theft_val = st.slider("قيمة التجاوز (Amps)", 20, 80, 45)
+        sel_sector = st.selectbox("موقع التجاوز", sectors)
+        sel_phase = st.radio("الفاز", ['R', 'S', 'T'])
+        theft_val = st.slider("تيار التجاوز (Amps)", 20, 150, 60)
     else:
         sel_sector, sel_phase, theft_val = None, None, 0
+        
     st.divider()
-    st.info("النظام يقوم بتدقيق الطاقة كل 2 ثانية")
+    st.subheader("💰 المعايير الاقتصادية والفنية")
+    tariff = st.number_input("تسعيرة الكهرباء (دينار/kWh)", value=15)
+    max_capacity = st.number_input("سعة المحولة القصوى (kW)", value=300)
+    
+    st.info("💡 النظام مزود بخوارزمية الفصل الذكي لحماية المحولات.")
 
-# --- 3. تنظيم الواجهة باستخدام Tabs (للرصانة) ---
-tab1, tab2, tab3 = st.tabs(["📈 لوحة المراقبة الحية", "🧮 المنطق الرياضي والقوانين", "📋 سجل كشف التجاوزات"])
+# --- 3. الأبواب (Tabs) لتنظيم العرض ---
+tab1, tab2, tab3 = st.tabs(["🖥️ غرفة العمليات (SCADA)", "💸 التحليل الاقتصادي والخسائر", "🧮 المعايير الرياضية"])
 
 with tab1:
     placeholder = st.empty()
     while True:
-        # توليد تذبذب مستقر (Realistic Noise)
-        fluct = np.random.uniform(0.98, 1.02, 50)
+        # 1. توليد القراءات اللحظية
+        fluct = np.random.uniform(0.99, 1.01, 50)
         currents = st.session_state.base_data * fluct
         
-        # بناء الداتا فريم
-        rows = []
-        for i in range(50):
-            sec = sectors[i // 10]
-            ph = ['R', 'S', 'T'][i % 3]
-            rows.append({'ID': f"M-{i+1:02d}", 'Sector': sec, 'Phase': ph, 'Load': currents[i]})
-        df = pd.DataFrame(rows)
+        df = pd.DataFrame({
+            'ID': [f"M-{i+1:02d}" for i in range(50)],
+            'Sector': [sectors[i // 10] for i in range(50)],
+            'Phase': [['R', 'S', 'T'][i % 3] for i in range(50)],
+            'Load_A': currents
+        })
 
-        # حسابات المحولة
-        summary = df.groupby(['Sector', 'Phase'])['Load'].sum().reset_index()
+        # 2. حسابات المحولة والتجاوز
+        summary = df.groupby(['Sector', 'Phase'])['Load_A'].sum().reset_index()
         trans_rows = []
         for _, r in summary.iterrows():
-            val = r['Load'] * 1.02 # ضياع فني 2%
-            if r['Sector'] == sel_sector and r['Phase'] == sel_phase:
+            val = r['Load_A'] * 1.02 # 2% ضياع فني
+            if inject and r['Sector'] == sel_sector and r['Phase'] == sel_phase:
                 val += theft_val
             trans_rows.append({'Sector': r['Sector'], 'Phase': r['Phase'], 'Trans_Load': val})
+        
         df_trans = pd.DataFrame(trans_rows)
+        
+        # تحويل التيار إلى قدرة (kW) - بافتراض 220 فولت
+        p_meters_total = (df['Load_A'].sum() * 220) / 1000
+        p_trans_total = (df_trans['Trans_Load'].sum() * 220) / 1000
+        load_percentage = (p_trans_total / max_capacity) * 100
+
+        # 3. خوارزمية الحماية (Smart Load Shedding)
+        system_warning = ""
+        if load_percentage > 95:
+            system_warning = "⚠️ المحولة في خطر الإنهيار! تم تفعيل الفصل الآلي لـ (القطاع B - السكني) للحفاظ على (القطاع C - المستشفى)."
+            # محاكاة فصل القطاع B
+            p_trans_total -= 40 # فصل افتراضي لـ 40 كيلوواط
+            load_percentage = (p_trans_total / max_capacity) * 100
 
         with placeholder.container():
-            # عرض المؤشرات
-            c1, c2, c3 = st.columns(3)
-            p_trans_total = df_trans['Trans_Load'].sum() * 220 / 1000
-            p_meters_total = df['Load'].sum() * 220 / 1000
-            c1.metric("حمل المحولة الكلي", f"{p_trans_total:.2f} kW")
-            c2.metric("الحمل المستهلك قانونياً", f"{p_meters_total:.2f} kW")
-            c3.metric("كفاءة المنظومة", f"{(p_meters_total/p_trans_total)*100:.1f}%")
+            # تنبيهات النظام
+            if system_warning:
+                st.error(system_warning)
+                
+            col_g1, col_g2, col_g3 = st.columns(3)
+            
+            # Gauge 1: حمل المحولة
+            fig_gauge1 = go.Figure(go.Indicator(
+                mode = "gauge+number", value = load_percentage,
+                title = {'text': "تحميل المحولة (%)"},
+                gauge = {'axis': {'range': [None, 120]},
+                         'bar': {'color': "darkblue"},
+                         'steps': [{'range': [0, 80], 'color': "lightgreen"},
+                                   {'range': [80, 95], 'color': "orange"},
+                                   {'range': [95, 120], 'color': "red"}]}
+            ))
+            fig_gauge1.update_layout(height=250, margin=dict(l=10, r=10, t=30, b=10))
+            col_g1.plotly_chart(fig_gauge1, use_container_width=True)
+
+            col_g2.metric("القدرة المجهزة الكلية", f"{p_trans_total:.1f} kW")
+            col_g2.metric("الاستهلاك المفوتر (القانوني)", f"{p_meters_total:.1f} kW")
+            
+            # حساب عدم الاتزان
+            ir = df_trans[df_trans['Phase'] == 'R']['Trans_Load'].sum()
+            is_ = df_trans[df_trans['Phase'] == 'S']['Trans_Load'].sum()
+            it = df_trans[df_trans['Phase'] == 'T']['Trans_Load'].sum()
+            unbalance = (max(abs(ir - is_), abs(is_ - it), abs(it - ir)) / ((ir+is_+it)/3)) * 100
+            
+            col_g3.metric("معامل عدم الاتزان", f"{unbalance:.1f}%", delta="مستقر" if unbalance < 15 else "خطر", delta_color="inverse")
 
             st.write("---")
-            # خريطة حرارية للقطاعات
-            st.subheader("📍 خارطة الحالة الجغرافية (Grid Heatmap)")
-            fig_map = px.scatter(df, x='Sector', y='ID', color='Load', size='Load',
-                                 color_continuous_scale='Viridis', title="توزيع الأحمال على المشتركين")
-            st.plotly_chart(fig_map, use_container_width=True)
-
-            col_a, col_b = st.columns(2)
-            with col_a:
-                st.subheader("📊 مقارنة الفازات في المحولة")
-                phase_p = df_trans.groupby('Phase')['Trans_Load'].sum()
-                st.bar_chart(phase_p)
-            with col_b:
-                st.subheader("⚖️ تيار المتعادل (Neutral Current)")
-                # حساب تيار المتعادل
-                ir = df_trans[df_trans['Phase'] == 'R']['Trans_Load'].sum()
-                is_ = df_trans[df_trans['Phase'] == 'S']['Trans_Load'].sum()
-                it = df_trans[df_trans['Phase'] == 'T']['Trans_Load'].sum()
-                in_curr = np.sqrt(ir**2 + is_**2 + it**2 - (ir*is_ + is_*it + it*ir))
-                st.metric("Neutral Current", f"{in_curr:.2f} A", delta="High Unbalance" if in_curr > 50 else "Stable")
-
-        time.sleep(2)
+            # رسم بياني للأحمال
+            fig_bar = px.bar(df_trans, x='Sector', y='Trans_Load', color='Phase',
+                             title="الأحمال الحية للقطاعات المغذاة", barmode='group')
+            st.plotly_chart(fig_bar, use_container_width=True)
+            
+        time.sleep(2) # تحديث مستمر
 
 with tab2:
-    st.header("📑 الأسس العلمية لحساب الضياعات")
-    st.write("لإثبات رصانة النظام، يعتمد البرنامج على القوانين التالية:")
+    st.header("💸 تقييم الأثر المالي للتجاوزات (Financial Audit)")
     
-    st.subheader("1. قانون ميزان القوى (Power Balance Law)")
-    st.latex(r"P_{Theft} = P_{Transformer} - (P_{Sum\_Meters} + P_{Technical\_Loss})")
-    st.info("حيث يتم عزل الضياعات الفنية (مقاومة الأسلاك) بنسبة 2% قبل افتراض وجود تجاوز.")
-
-    st.subheader("2. تيار الخط المتعادل (Neutral Current Calculation)")
-    st.latex(r"I_N = \sqrt{I_R^2 + I_S^2 + I_T^2 - (I_R I_S + I_S I_T + I_T I_R)}")
-    st.write("يستخدم هذا القانون لكشف عدم الاتزان الناتج عن السحب غير القانوني على فاز معين دون الآخر.")
-
-    st.subheader("3. خوارزمية تحديد الموقع (Localization Logic)")
-    st.write("""
-    يعمل النظام بطريقة **تدقيق النقاط الفرعية (Sub-point Audit)**:
-    - يتم تقسيم الشبكة إلى قطاعات (Feeders).
-    - لكل قطاع، نقارن مجموع العدادات $ \sum I_{meters} $ مع قراءة المحولة لذلك القطاع.
-    - إذا كان $ \Delta I > Threshold $، يتم تحديد القطاع والفاز المصاب فوراً.
-    """)
+    if inject:
+        # الحسابات المالية
+        theft_kw = (theft_val * 220) / 1000
+        cost_per_hour = theft_kw * tariff
+        cost_per_month = cost_per_hour * 24 * 30
+        cost_per_year = cost_per_month * 12
+        
+        st.error(f"🚨 تم اكتشاف هدر مالي بسبب التجاوز في **{sel_sector} - الفاز {sel_phase}**")
+        
+        c1, c2, c3 = st.columns(3)
+        c1.metric("الطاقة المسروقة اللحظية", f"{theft_kw:.2f} kW")
+        c2.metric("الخسارة الشهرية المقدرة", f"{cost_per_month:,.0f} IQD")
+        c3.metric("الخسارة السنوية المقدرة", f"{cost_per_year:,.0f} IQD")
+        
+        st.write("---")
+        st.subheader("📉 الإسقاط المالي التراكمي")
+        # رسم بياني للخسائر التراكمية
+        months = [f"شهر {i+1}" for i in range(12)]
+        cumulative_loss = [cost_per_month * (i+1) for i in range(12)]
+        fig_finance = px.area(x=months, y=cumulative_loss, 
+                              labels={'x': 'الفترة الزمنية', 'y': 'الخسائر التراكمية (دينار)'},
+                              title="النزيف المالي المتوقع في حال عدم معالجة التجاوز")
+        st.plotly_chart(fig_finance, use_container_width=True)
+        
+    else:
+        st.success("✅ الشبكة محكمة. لا توجد خسائر مالية خارج نسبة الضياع الفني الطبيعي (2%).")
 
 with tab3:
-    st.header("🚨 سجل كشف التجاوزات الآلي")
-    if inject:
-        st.error(f"🔴 تم رصد تجاوز نشط!")
-        st.table(pd.DataFrame({
-            "المعلمة": ["القطاع المتأثر", "الفاز المصاب", "قيمة التجاوز المقدرة", "وقت الاكتشاف"],
-            "القيمة": [sel_sector, sel_phase, f"{theft_val} Amps", time.strftime("%H:%M:%S")]
-        }))
-    else:
-        st.success("🟢 الشبكة تعمل بشكل طبيعي - لا توجد تجاوزات حالياً")
-        
+    st.header("📐 الأسس الرياضية للمنظومة الاقتصادية والفنية")
+    
+    st.subheader("1. معادلة الخسائر المالية (Economic Loss Equation)")
+    st.latex(r"Cost_{Monthly} = P_{Theft} \times Tariff \times 24 \times 30")
+    st.write("حيث $P_{Theft}$ هي القدرة المسروقة بالكيلوواط، والـ Tariff هي تسعيرة وحدة الكهرباء.")
+    
+    st.subheader("2. معامل عدم الاتزان (Voltage/Current Unbalance Factor)")
+    st.latex(r"Unbalance\% = \frac{Max_{Deviation}}{Average_{Current}} \times 100")
+    
+    st.subheader("3. خوارزمية الحماية الذكية (Smart Load Shedding Logic)")
+    st.code("""
+    if Total_Transformer_Load > 95%:
+        Disconnect_Sector(Priority='Low') # فصل الأحمال غير الحيوية
+        Send_Alert_To_SCADA()
+        Protect_Transformer_From_Burnout()
+    """, language="python")
+    
