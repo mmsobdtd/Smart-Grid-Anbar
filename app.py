@@ -1,148 +1,47 @@
 import streamlit as st
 import pandas as pd
+import plotly.express as px
 import numpy as np
-import time
 
 # إعدادات الصفحة
-st.set_page_config(page_title="Al-Anbar Grid - Dynamic Sorting", layout="wide")
+st.set_page_config(page_title="Anbar Smart Grid", layout="wide")
 
-# --- 1. تهيئة الذاكرة والسجلات ---
-if 'all_data_log' not in st.session_state:
-    st.session_state.all_data_log = pd.DataFrame(columns=["المحطة", "V", "I", "P (kW)", "PF", "Load%", "الحالة", "p"])
-if 'net_load' not in st.session_state: 
-    st.session_state.net_load = 15 
-if 'transformers' not in st.session_state:
-    st.session_state.transformers = {f"محولة {i}": {"active": True, "last_i": 75} for i in range(1, 6)}
+st.title("⚡ نظام إدارة الشبكة الذكية المتكامل - الأنبار")
 
-# --- 2. واجهة العناوين (Header) ---
-st.title("⚡ نظام الرصد والفرز الديناميكي للشبكة الذكية")
-st.markdown(f"### **إعداد الطالب: محمد نبيل**")
-st.write("**الحالة:** مراقبة حية - يتم تحديث الفرز مع كل إرسال بيانات")
+# محاكاة البيانات في القائمة الجانبية
+with st.sidebar:
+    st.header("⚙️ مدخلات الشبكة")
+    p_main = st.number_input("القدرة الكلية للمحولة (kW)", value=800.0)
+    st.subheader("أحمال الفازات (Amp)")
+    ir = st.slider("الفاز R", 0.0, 400.0, 250.0)
+    is_ = st.slider("الفاز S", 0.0, 400.0, 280.0)
+    it = st.slider("الفاز T", 0.0, 400.0, 210.0)
+    p_meters = st.number_input("مجموع قراءات العدادات (kW)", value=720.0)
 
-# مفتاح البروتوكول في الجانب
-st.sidebar.header("🕹️ التحكم بالبروتوكول")
-protocol_on = st.sidebar.toggle("🔐 تفعيل الفرز اللحظي (Priority Sorting)", value=True)
+# الحسابات الهندسية (لإقناع الدكتور برصانة العمل)
+tech_loss = p_main * 0.05
+total_loss = p_main - p_meters
+theft_loss = max(0.0, total_loss - tech_loss)
+# تيار المتعادل (للتوازن)
+i_n = np.sqrt(ir**2 + is_**2 + it**2 - (ir*is_ + is_*it + it*ir))
 
-if st.sidebar.button("♻️ إعادة تشغيل المنظومة"):
-    st.session_state.all_data_log = st.session_state.all_data_log.iloc[0:0]
-    st.session_state.net_load = 15
-    st.rerun()
+# عرض النتائج
+col1, col2, col3 = st.columns(3)
+col1.metric("تيار المتعادل", f"{i_n:.2f} A")
+col2.metric("التجاوزات", f"{theft_loss:.1f} kW", delta_color="inverse")
+col3.metric("كفاءة الشبكة", f"{(p_meters/p_main)*100:.1f}%")
 
-st.divider()
+st.write("---")
+# الرسوم البيانية
+c1, c2 = st.columns(2)
+with c1:
+    st.subheader("📊 توزيع الطاقة وضياعات التجاوز")
+    fig = px.pie(values=[p_meters, tech_loss, theft_loss], names=['قانوني', 'ضياع فني', 'تجاوز'])
+    st.plotly_chart(fig, use_container_width=True)
+with c2:
+    st.subheader("📈 مراقبة الفازات الثلاثة")
+    st.bar_chart({"Current (A)": [ir, is_, it]})
 
-# --- 3. محاكاة استقرار الشبكة والانهيار التدريجي ---
-st.subheader("🌐 إجهاد تدفق البيانات (Network Traffic Stress)")
-col_net1, col_net2, col_net3 = st.columns(3)
-
-active_count = sum(1 for t in st.session_state.transformers.values() if t["active"])
-
-if not protocol_on:
-    # انهيار تدريجي عند إطفاء البروتوكول
-    st.session_state.net_load += np.random.uniform(1.5, 3.5) * (active_count / 2)
-    pps = np.random.randint(450, 600)
-    latency = int(st.session_state.net_load * 12)
-    net_status = "⚠️ اختناق البيانات" if st.session_state.net_load < 90 else "🚨 انهيار وشيك"
-else:
-    # استقرار عند التفعيل
-    st.session_state.net_load = max(10, st.session_state.net_load - 5)
-    pps = np.random.randint(35, 60)
-    latency = np.random.randint(15, 30)
-    net_status = "✅ مستقرة"
-
-st.session_state.net_load = min(100, st.session_state.net_load)
-
-with col_net1:
-    st.metric("معدل النقل", f"{pps} PPS")
-with col_net2:
-    st.metric("التأخير", f"{latency} ms")
-with col_net3:
-    st.write(f"**حالة الاتصال:** {net_status}")
-    st.progress(st.session_state.net_load / 100)
-
-if st.session_state.net_load >= 100:
-    st.error("🆘 !!! CRITICAL NETWORK FAILURE: BUFFER OVERFLOW !!!")
-    if st.button("إعادة محاولة الاتصال"):
-        st.session_state.net_load = 15
-        st.rerun()
-    st.stop()
-
-st.divider()
-
-# --- 4. توليد ومعالجة البيانات ---
-current_batch = [] 
-
-for name, state in st.session_state.transformers.items():
-    if state["active"]:
-        v = int(np.random.uniform(219, 226))
-        i_val = int(np.random.uniform(60, 155))
-        pf = round(np.random.uniform(0.86, 0.94), 2)
-        p_kw = int((v * i_val * pf) / 1000)
-        load_pct = int((i_val / 150) * 100)
-        
-        # منطق تحديد الأولوية
-        if load_pct >= 95: status, prio = "🚨 خطر جداً", 1
-        elif load_pct >= 80: status, prio = "⚠️ تنبيه حمل", 2
-        else: status, prio = "✅ طبيعي", 3
-        
-        state["last_i"] = i_val
-    else:
-        v, i_val, p_kw, pf, load_pct, status, prio = 0, 0, 0, 0, 0, "🛑 مفصول", 4
-
-    current_batch.append({
-        "المحطة": name, "V": v, "I": i_val, "P (kW)": p_kw, 
-        "PF": pf, "Load%": load_pct, "الحالة": status, "p": prio
-    })
-
-df_batch = pd.DataFrame(current_batch)
-
-# --- 5. منطق الفرز الديناميكي ---
-if protocol_on:
-    # الفرز حسب عمود p (الأقل قيمة تعني أولوية أعلى)
-    df_batch = df_batch.sort_values(by="p", ascending=True)
-else:
-    # وضع الفوضى (Chaos Mode)
-    df_batch = df_batch.sample(frac=1).reset_index(drop=True)
-
-# تحديث السجل التاريخي
-st.session_state.all_data_log = pd.concat([df_batch, st.session_state.all_data_log], ignore_index=True).head(500)
-
-# --- 6. عرض أزرار التحكم ---
-st.subheader("🕹️ وحدة السيطرة اللحظية")
-c_btns = st.columns(5)
-for idx, (name, state) in enumerate(st.session_state.transformers.items()):
-    with c_btns[idx]:
-        if state["active"]:
-            if st.button(f"فصل {name}", key=f"off_{idx}"):
-                st.session_state.transformers[name]["active"] = False
-                st.rerun()
-        else:
-            if st.button(f"تشغيل {name}", key=f"on_{idx}"):
-                st.session_state.transformers[name]["active"] = True
-                st.rerun()
-
-st.divider()
-
-# --- 7. عرض الجدول الديناميكي الملون ---
-st.subheader("📋 جدول الرصد الديناميكي (تحديث وفرز لحظي)")
-
-def style_row(val):
-    if '🚨' in str(val): return 'background-color: #ff4b4b; color: white'
-    if '⚠️' in str(val): return 'background-color: #fff3cd'
-    if '✅' in str(val): return 'background-color: #d4edda'
-    if '🛑' in str(val): return 'background-color: #721c24; color: white'
-    return ''
-
-# عرض الجدول مع تطبيق التنسيق الشرطي
-st.write(df_batch.drop(columns=['p']).style.map(style_row, subset=['الحالة']))
-
-st.divider()
-
-# --- 8. مراجعة السجل الخاص ---
-st.subheader("🔍 مراجعة السجل التاريخي (الأرشفة)")
-selected_trans = st.selectbox("اختر المحولة للمراجعة:", list(st.session_state.transformers.keys()))
-history_filtered = st.session_state.all_data_log[st.session_state.all_data_log["المحطة"] == selected_trans]
-st.dataframe(history_filtered.drop(columns=['p']), use_container_width=True, hide_index=True)
-
-# توقيت التحديث اللحظي
-time.sleep(1.5)
-st.rerun()
+if theft_loss > 40:
+    st.error(f"🚨 تحذير: تم كشف سرقة طاقة بقيمة {theft_loss:.1f} كيلو واط!")
+    
