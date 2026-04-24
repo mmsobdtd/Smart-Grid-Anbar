@@ -3,118 +3,109 @@ import pandas as pd
 import numpy as np
 
 # إعدادات الصفحة
-st.set_page_config(page_title="Al-Anbar Grid - Segment Theft Detection", layout="wide")
+st.set_page_config(page_title="Al-Anbar Smart Grid - Full System", layout="wide")
 
-# --- 1. تهيئة الذاكرة (بدون التحديث التلقائي المزعج) ---
+# --- 1. تهيئة الذاكرة (بدون حلقات لا نهائية) ---
+if 'transformers' not in st.session_state:
+    # تهيئة 5 محطات وتكون جميعها قيد التشغيل مبدئياً
+    st.session_state.transformers = {f"محطة {i}": {"active": True} for i in range(1, 6)}
 if 'time_step' not in st.session_state: 
     st.session_state.time_step = 0
-if 'alert_history' not in st.session_state: 
-    st.session_state.alert_history = []
 
 # --- 2. واجهة العناوين ---
-st.title("⚡ نظام المراقبة الذكي: كشف التجاوزات على خطوط النقل")
-st.markdown("### **تحليل المقاطع (Segment Analysis) بين المحولة والمنازل**")
+st.title("⚡ نظام إدارة شبكة الأنبار الذكية (SCADA)")
+st.markdown("### **التحكم اللحظي بالمحطات، المراقبة التفصيلية، وكشف التجاوزات**")
 
-# --- 3. القائمة الجانبية للتحكم ---
-st.sidebar.header("🕹️ لوحة التحكم والمحاكاة")
+# --- 3. القائمة الجانبية (محاكاة وتحديث) ---
+st.sidebar.header("🕹️ لوحة المحاكاة والتحكم")
 
-# زر تحديث البيانات اليدوي (بديل التحديث التلقائي)
-if st.sidebar.button("🔄 سحب قراءة جديدة (التالي)", use_container_width=True):
+if st.sidebar.button("🔄 تحديث القراءات (سحب بيانات جديدة)", use_container_width=True):
     st.session_state.time_step += 1
 
 st.sidebar.divider()
-st.sidebar.header("⚠️ وحدة حقن التجاوزات")
-st.sidebar.write("اختر المقطع (السلك) الذي سيتم رمي التجاوز عليه:")
+st.sidebar.header("⚠️ محاكاة التجاوزات (السرقة)")
+st.sidebar.write("اختر المحطة التي سيتم وضع حمل غير قانوني على خطها:")
+target_theft = st.sidebar.selectbox("موقع التجاوز:", ["لا يوجد تجاوز"] + list(st.session_state.transformers.keys()))
 
-# المقاطع
-segments = ["لا يوجد تجاوز", 
-            "مقطع A (محولة -> عمود 1)", 
-            "مقطع B (عمود 1 -> عمود 2)", 
-            "مقطع C (عمود 2 -> عمود 3)"]
-
-target_segment = st.sidebar.selectbox("موقع التجاوز (الربط غير القانوني):", segments)
-
-st.sidebar.divider()
-if st.sidebar.button("🗑️ تصفير النظام"):
-    st.session_state.time_step = 0
-    st.session_state.alert_history = []
-    st.rerun()
-
-# --- 4. محاكاة الشبكة والقياس التفاضلي ---
-houses_load = {
-    "مقطع A": 30, 
-    "مقطع B": 45, 
-    "مقطع C": 25  
-}
-
-line_loss_margin = 2.0 
-total_expected_i = sum(houses_load.values())
-
-theft_current = 0
-if target_segment != "لا يوجد تجاوز":
-    theft_current = np.random.uniform(40, 60) 
-
-# حساب التيارات الفعلية
-actual_i_in_A = total_expected_i + (theft_current if target_segment in ["مقطع A", "مقطع B", "مقطع C"] else 0)
-actual_i_in_B = actual_i_in_A - houses_load["مقطع A"] - (theft_current if target_segment == "مقطع A" else 0)
-actual_i_in_C = actual_i_in_B - houses_load["مقطع B"] - (theft_current if target_segment == "مقطع B" else 0)
-
-network_data = []
-alerts_triggered = []
-
-def analyze_segment(seg_name, i_in, next_i_in, legal_load):
-    current_loss = i_in - (next_i_in + legal_load)
-    
-    if current_loss > line_loss_margin:
-        status = "🚨 تم كشف تجاوز!"
-        alerts_triggered.append(f"⚠️ إنذار أمني (الخطوة الزمنية {st.session_state.time_step}): اكتشاف ربط غير قانوني في {seg_name} بتيار مسروق يقدر بـ {round(current_loss,1)}A.")
-    else:
-        status = "✅ المقطع سليم"
-        
-    network_data.append({
-        "المقطع (Segment)": seg_name,
-        "التيار الداخل (A)": round(i_in, 1),
-        "التيار الخارج (A)": round(next_i_in, 1),
-        "استهلاك العدادات (A)": round(legal_load, 1),
-        "التيار المفقود (A)": round(current_loss, 1),
-        "حالة الخط": status
-    })
-
-analyze_segment("مقطع A", actual_i_in_A, actual_i_in_B, houses_load["مقطع A"])
-analyze_segment("مقطع B", actual_i_in_B, actual_i_in_C, houses_load["مقطع B"])
-analyze_segment("مقطع C", actual_i_in_C, 0, houses_load["مقطع C"]) 
-
-df_network = pd.DataFrame(network_data)
-
-# --- 5. نظام الإنذار ---
-st.subheader("🔔 مركز الإشعارات والإنذار المبكر")
-
-if alerts_triggered:
-    for alert in alerts_triggered:
-        st.error(alert, icon="📍")
-        if alert not in st.session_state.alert_history:
-            st.session_state.alert_history.insert(0, alert)
-else:
-    st.success("✅ جميع خطوط النقل آمنة ولا يوجد تسريب للطاقة.", icon="🛡️")
+# --- 4. أزرار التشغيل والإطفاء (وحدة السيطرة) ---
+st.subheader("🎛️ وحدة السيطرة المركزية (التشغيل والفصل)")
+cols = st.columns(5)
+for idx, (name, state) in enumerate(st.session_state.transformers.items()):
+    with cols[idx]:
+        if state["active"]:
+            # زر الإطفاء
+            if st.button(f"🔴 فصل {name}", key=f"off_{name}"):
+                st.session_state.transformers[name]["active"] = False
+                st.rerun() # تحديث الصفحة فقط عند الضغط
+        else:
+            # زر التشغيل
+            if st.button(f"🟢 تشغيل {name}", key=f"on_{name}"):
+                st.session_state.transformers[name]["active"] = True
+                st.rerun()
 
 st.divider()
 
-# --- 6. جدول التحليل ---
-st.subheader("📊 لوحة تدقيق المقاطع (Energy Audit)")
-st.write(f"**القراءة الحالية:** الخطوة الزمنية {st.session_state.time_step}")
+# --- 5. توليد البيانات وخوارزمية التشخيص ---
+data = []
+alerts_triggered = []
 
-def style_segments(val):
-    if '🚨' in str(val): return 'background-color: #ff4b4b; color: white; font-weight: bold'
+for name, state in st.session_state.transformers.items():
+    if state["active"]:
+        # القراءات الطبيعية
+        v = int(np.random.uniform(215, 226))
+        pf = round(np.random.uniform(0.88, 0.95), 2)
+        expected_i = int(90 + 20 * np.sin(st.session_state.time_step)) # تيار متغير مع الوقت
+        i_val = int(expected_i + np.random.uniform(-5, 10))
+
+        # حقن التجاوز إذا تم اختياره
+        is_theft = (target_theft == name)
+        if is_theft:
+            i_val += int(np.random.uniform(45, 65)) # سحب تيار عالي جداً فجأة
+            pf -= np.random.uniform(0.12, 0.18)      # هبوط في معامل القدرة
+            v -= int(np.random.uniform(10, 18))      # هبوط حاد في الفولتية
+
+        # حسابات القدرة ونسبة الحمل
+        p_kw = int((v * i_val * pf) / 1000)
+        load_pct = int((i_val / 150) * 100)
+
+        # تحديد الحالة والأولوية (الفرز)
+        if is_theft:
+            status, prio = "🪝 تجاوز مكتشف", 1
+            alerts_triggered.append(f"⚠️ إنذار: هبوط فولتية غير طبيعي ({v}V) وسحب تيار عالي في {name}. اشتباه بربط غير قانوني!")
+        elif load_pct >= 95:
+            status, prio = "🚨 حمل زائد", 2
+        elif load_pct >= 80:
+            status, prio = "⚠️ تنبيه ذروة", 3
+        else:
+            status, prio = "✅ طبيعي", 4
+    else:
+        # حالة المحطة المفصولة
+        v, i_val, p_kw, pf, load_pct, status, prio = 0, 0, 0, 0, 0, "🛑 مفصول", 5
+
+    data.append({
+        "المحطة": name, "V": v, "I (A)": i_val, "P (kW)": p_kw,
+        "PF": pf, "Load %": f"{load_pct}%", "تفاصيل الحالة": status, "p": prio
+    })
+
+# بناء الجدول وفرزه ديناميكياً بناءً على الأولوية
+df = pd.DataFrame(data)
+df = df.sort_values(by="p").drop(columns=["p"])
+
+# --- 6. نظام الإشعارات ---
+if alerts_triggered:
+    st.subheader("🔔 تنبيهات الشبكة")
+    for a in alerts_triggered:
+        st.error(a)
+
+# --- 7. الجدول التفصيلي ---
+st.subheader("📋 جدول تفاصيل القراءات (فرز ديناميكي)")
+
+def style_row(val):
+    if '🪝' in str(val): return 'background-color: #800080; color: white'
+    if '🚨' in str(val): return 'background-color: #ff4b4b; color: white'
+    if '⚠️' in str(val): return 'background-color: #fff3cd'
     if '✅' in str(val): return 'background-color: #d4edda'
+    if '🛑' in str(val): return 'background-color: #721c24; color: white'
     return ''
 
-st.table(df_network.style.map(style_segments, subset=['حالة الخط']))
-
-# --- 7. سجل المراقبة ---
-with st.expander("📂 سجل إنذارات التجاوزات السابقة"):
-    if st.session_state.alert_history:
-        for log in st.session_state.alert_history[:10]: 
-            st.write(log)
-    else:
-        st.write("لا توجد إنذارات مسجلة.")
-                
+st.table(df.style.map(style_row, subset=['تفاصيل الحالة']))
