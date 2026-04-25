@@ -2,142 +2,141 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-# --- 1. إعدادات الصفحة والتنسيق الأبيض النظيف ---
-st.set_page_config(page_title="Al-Anbar Smart Grid - Full View", layout="wide")
+# --- 1. إعدادات الصفحة والتنسيق الاحترافي ---
+st.set_page_config(page_title="Al-Anbar Smart Grid - Financial Monitor", layout="wide")
 
 st.markdown("""
     <style>
-    /* خلفية بيضاء ونصوص واضحة */
     .stApp { background-color: #ffffff; color: #1a1a1a; }
-    
-    /* بطاقات العقد والأعمدة */
     .node-box {
         background: #f8f9fa;
         border: 2px solid #e9ecef;
-        border-radius: 10px;
+        border-radius: 12px;
         padding: 15px;
         text-align: center;
-        box-shadow: 2px 2px 8px rgba(0,0,0,0.05);
+        box-shadow: 2px 2px 10px rgba(0,0,0,0.05);
     }
-    
-    /* تنبيه التجاوز الأحمر */
-    .theft-warning {
+    .theft-active {
         border: 2px solid #dc3545;
         background-color: #fff5f5;
-        animation: blink 1.5s infinite;
+        box-shadow: 0 0 15px rgba(220, 53, 69, 0.2);
     }
-    @keyframes blink { 50% { border-color: transparent; } }
-
-    /* الأزرار الاحترافية */
+    .financial-card {
+        background-color: #e7f3ff;
+        border-right: 5px solid #007bff;
+        padding: 20px;
+        border-radius: 10px;
+    }
     .stButton>button {
-        background-color: #ffffff;
-        color: #007bff;
-        border: 1px solid #007bff;
-        border-radius: 5px;
+        width: 100%;
+        border-radius: 8px;
         font-weight: bold;
-    }
-    .stButton>button:hover {
-        background-color: #007bff;
-        color: white;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. المحرك الهندسي (Engineering Logic) ---
-V_SOURCE = 226.550 # فولتية المصدر بدقة
-R_LINE = 0.325     # مقاومة السلك الكلية (أوم)
-LEGAL_I = 92.440   # الاستهلاك الشرعي الثابت (أمبير)
+# --- 2. تهيئة حالة الأزرار (Session State لـ 4 أعمدة) ---
+for i in range(1, 5):
+    if f'pole_{i}_theft' not in st.session_state:
+        st.session_state[f'pole_{i}_theft'] = False
 
-def calculate_grid_metrics(theft_i):
-    total_i = LEGAL_I + theft_i
-    v_drop = total_i * R_LINE
-    v_actual = V_SOURCE - v_drop
-    # القدرة المفقودة كلياً (P = V * I * PF)
-    p_loss_kw = (v_actual * theft_i * 0.91) / 1000 if theft_i > 0 else 0
-    efficiency = (LEGAL_I / total_i) * 100 if total_i > 0 else 100
-    return round(v_actual, 3), round(total_i, 3), round(p_loss_kw, 3), round(efficiency, 1)
+# --- 3. المحرك الهندسي والمالي ---
+V_SOURCE = 226.50
+R_LINE = 0.350       # مقاومة السلك
+LEGAL_I = 92.0       # الاستهلاك الشرعي (أمبير)
+THEFT_I_PER_POLE = 40.0 # التيار المسحوب عند كل تجاوز (أمبير)
+IQD_PER_KWH = 50     # سعر الكيلو واط ساعة
 
-# --- 3. واجهة المستخدم (السيطرة والبيانات) ---
+# حساب عدد التجاوزات النشطة حالياً
+active_thefts = sum([st.session_state[f'pole_{i}_theft'] for i in range(1, 5)])
+total_theft_i = active_thefts * THEFT_I_PER_POLE
 
-st.title("⚡ منظومة رصد وتتبع أحمال الأنبار الذكية")
+# الحسابات الهندسية
+total_i = LEGAL_I + total_theft_i
+v_drop = total_i * R_LINE
+v_actual = V_SOURCE - v_drop
+
+# حساب الخسائر المالية
+# P = (V * I * PF) / 1000 -> PF = 0.9
+p_theft_kw = (v_actual * total_theft_i * 0.9) / 1000
+loss_iqd_hour = int(p_theft_kw * IQD_PER_KWH)
+loss_iqd_month = loss_iqd_hour * 24 * 30
+
+# --- 4. واجهة المستخدم ---
+st.title("⚡ منظومة رصد التجاوزات والتحليل المالي")
 st.markdown(f"**إعداد الطالب:** محمد نبيل | **الجامعة:** جامعة الأنبار - كلية الهندسة")
 
-# القائمة الجانبية الموحدة
-with st.sidebar:
-    st.header("⚙️ السيطرة على المحاكاة")
-    if st.button("🔄 تحديث قراءات IoT", use_container_width=True):
-        st.toast("جاري سحب البيانات...")
-    
-    st.divider()
-    theft_loc = st.selectbox("موقع التجاوز (للفحص):", 
-                             ["سليم ✅", "عقدة A (زقاق 1)", "عقدة B (زقاق 2)", "عقدة C (زقاق 3)"])
-    
-    theft_val = 0
-    if theft_loc != "سليم ✅":
-        theft_val = st.slider("تيار التجاوز (A):", 0.0, 150.0, 65.5, 0.5)
-        
-    st.divider()
-    if st.button("🚨 تصفير (Reset)", use_container_width=True):
-        st.rerun()
+st.divider()
 
-# حسابات الحالة الحالية
-v_act, i_act, p_loss, eff = calculate_grid_metrics(theft_val)
-v_norm, i_norm, _, _ = calculate_grid_metrics(0) # القيمة الطبيعية للمقارنة
+# قسم التحكم (الأزرار الأربعة)
+st.subheader("🕹️ لوحة حقن التجاوزات (تحكم متعدد)")
+ctrl_cols = st.columns(4)
 
-# --- 4. عرض المقاييس (Dashboard) ---
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("الجهد النهائي", f"{v_act} V", f"{round(v_act - v_norm, 2)} V")
-col2.metric("الحمل الإجمالي", f"{i_act} A", f"+{round(i_act - i_norm, 2)} A")
-col3.metric("القدرة المسروقة", f"{p_loss} kW")
-col4.metric("كفاءة النقل", f"{eff}%")
+for i in range(1, 5):
+    with ctrl_cols[i-1]:
+        label = "❌ إيقاف التجاوز" if st.session_state[f'pole_{i}_theft'] else "🪝 تفعيل تجاوز"
+        if st.button(label, key=f"btn_{i}"):
+            st.session_state[f'pole_{i}_theft'] = not st.session_state[f'pole_{i}_theft']
+            st.rerun()
+        st.markdown(f"<center><b>عامود {i}</b></center>", unsafe_allow_html=True)
 
 st.divider()
 
-# --- 5. تمثيل الشارع (Street Simulation) ---
-st.subheader("📍 الخارطة المرئية لخط التوزيع (Live Stream)")
-street_cols = st.columns(4)
+# قسم المقاييس والحالة اللحظية
+m1, m2, m3 = st.columns(3)
+m1.metric("جهد الشبكة", f"{round(v_actual, 1)} V", f"{round(v_actual-220, 1)}V")
+m2.metric("الحمل الكلي المجهز", f"{round(total_i, 1)} A")
+m3.metric("عدد التجاوزات النشطة", f"{active_thefts} مواقع")
 
-nodes = [
-    {"name": "المحولة 01", "sub": "محطة المستودع", "icon": "🏢", "hit": False},
-    {"name": "عقدة A", "sub": "زقاق 1", "icon": "🗼", "hit": (theft_loc == "عقدة A (زقاق 1)")},
-    {"name": "عقدة B", "sub": "زقاق 2", "icon": "🗼", "hit": (theft_loc == "عقدة B (زقاق 2)")},
-    {"name": "عقدة C", "sub": "زقاق 3", "icon": "🗼", "hit": (theft_loc == "عقدة C (زقاق 3)")}
-]
+st.divider()
 
-for i, node in enumerate(nodes):
-    with street_cols[i]:
-        style = "node-box theft-warning" if node["hit"] else "node-box"
+# قسم تمثيل الشارع (Live Map)
+st.subheader("🏙️ المراقبة المرئية لخط التوزيع")
+map_cols = st.columns(5)
+
+# عرض المحولة أولاً
+with map_cols[0]:
+    st.markdown("<div class='node-box'>🏢<br><b>المحولة 01</b><br><small>محطة المستودع</small></div>", unsafe_allow_html=True)
+
+# عرض الأعمدة الأربعة مع استجابة لونية للأزرار
+for i in range(1, 5):
+    with map_cols[i]:
+        is_active = st.session_state[f'pole_{i}_theft']
+        style = "node-box theft-active" if is_active else "node-box"
         st.markdown(f"""
             <div class='{style}'>
-                <div style='font-size: 35px;'>{node['icon']}</div>
-                <div style='font-weight: bold; margin-top:10px;'>{node['name']}</div>
-                <div style='font-size: 12px; color: #6c757d;'>{node['sub']}</div>
+                <div style='font-size: 30px;'>🗼</div>
+                <b>عامود {i}</b><br>
+                <small>{'⚠️ تجاوز مكتشف' if is_active else '✅ سليم'}</small>
             </div>
             """, unsafe_allow_html=True)
-        if node["hit"]:
-            st.error("🚨 اكتشاف تجاوز!")
 
 st.divider()
 
-# --- 6. التقارير والتحليل الرياضي (كل شيء في صفحة واحدة) ---
-rep_col, math_col = st.columns([1.2, 1])
+# قسم التقرير المالي (بديل المعادلات)
+st.subheader("💰 تقرير الهدر المالي والاقتصادي")
+f_col1, f_col2 = st.columns(2)
 
-with rep_col:
-    st.subheader("📋 التقرير الفني المباشر")
-    st.write(f"المحولة مجهزة بـ: **{i_act} أمبير**.")
-    st.write(f"مجموع عدادات البيوت (الشرعية): **{LEGAL_I} أمبير**.")
-    diff = round(i_act - LEGAL_I, 3)
-    if diff > 1.0:
-        st.error(f"⚠️ يوجد فاقد غير مفسر بقيمة **{diff} أمبير** في {theft_loc}.")
-        st.write(f"الخسارة المالية التقديرية: **{int(p_loss * 50)} دينار/ساعة**.")
-    else:
-        st.success("✅ حالة الشبكة مستقرة وضمن حدود الفاقد الفني المسموح.")
+with f_col1:
+    st.markdown(f"""
+    <div class='financial-card'>
+        <h3>💸 الخسائر المالية الحالية</h3>
+        <p>تيار التجاوز التراكمي: <b>{total_theft_i} أمبير</b></p>
+        <h2 style='color: #dc3545;'>{loss_iqd_hour:,} دينار / ساعة</h2>
+    </div>
+    """, unsafe_allow_html=True)
 
-with math_col:
-    st.subheader("📐 النموذج الرياضي")
-    st.latex(r"V_{drop} = (I_{legal} + I_{theft}) \cdot R_{wire}")
-    st.latex(r"P_{loss} = \frac{V_{actual} \cdot I_{theft} \cdot \cos(\phi)}{1000}")
-    st.caption("ملاحظة: تم حساب النتائج بدقة 3 فواصل عشرية لمحاكاة الحساسات الصناعية.")
+with f_col2:
+    st.markdown(f"""
+    <div class='financial-card'>
+        <h3>📅 التوقعات الشهرية</h3>
+        <p>بناءً على معدل التجاوزات الحالي</p>
+        <h2 style='color: #dc3545;'>{loss_iqd_month:,} دينار / شهر</h2>
+    </div>
+    """, unsafe_allow_html=True)
+
+st.info(f"💡 ملاحظة: تم حساب التكلفة بناءً على سعر {IQD_PER_KWH} دينار للكيلو واط ساعة المعتمد في محافظة الأنبار.")
 
 st.divider()
-st.markdown("<center>إعداد الطالب: محمد نبيل | جامعة الأنبار - قسم الكهرباء | 2026</center>", unsafe_allow_html=True)
+st.markdown("<center>نظام المراقبة الذكي v7.0 | جامعة الأنبار 2026</center>", unsafe_allow_html=True)
+
