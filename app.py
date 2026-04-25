@@ -146,4 +146,4 @@ with tab_math:
 # التذييل
 st.divider()
 st.markdown("<center>إعداد الطالب: محمد نبيل | كلية الهندسة - جامعة الأنبار | نظام مراقبة ذكي 2026</center>", unsafe_allow_html=True)
-            ط
+            
