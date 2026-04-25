@@ -1,241 +1,161 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.graph_objects as go
-from datetime import datetime, timedelta
-import time
+from datetime import datetime
 
 # ==========================================
-# 1. الإعدادات العامة والتنسيق الصناعي (CSS)
+# 1. الإعدادات الجمالية المتقدمة (Professional Dark Theme)
 # ==========================================
-st.set_page_config(page_title="Al-Anbar Advanced Grid SCADA v4.0", layout="wide")
+st.set_page_config(page_title="Grid Guardian - Al-Anbar", layout="wide")
 
 st.markdown("""
     <style>
-    .reportview-container { background: #0e1117; }
-    .stMetric { background-color: #1a1c24; padding: 15px; border-radius: 10px; border: 1px solid #3e4451; }
-    .main-header { font-size: 38px; color: #00d4ff; font-weight: bold; text-align: center; text-shadow: 2px 2px #000; }
-    .sidebar-title { color: #00d4ff; font-size: 20px; font-weight: bold; }
-    .log-container { background-color: #000; color: #0f0; padding: 10px; font-family: 'Courier New', monospace; height: 250px; overflow-y: scroll; border: 1px solid #333; }
+    /* تنسيق الخلفية العامة */
+    .stApp { background-color: #0b0e14; color: #e0e0e0; }
+    
+    /* بطاقات الأعمدة والبيوت */
+    .grid-node {
+        background: linear-gradient(145deg, #161b22, #0d1117);
+        border: 1px solid #30363d;
+        border-radius: 15px;
+        padding: 20px;
+        text-align: center;
+        box-shadow: 5px 5px 15px rgba(0,0,0,0.3);
+        margin-bottom: 20px;
+    }
+    
+    /* حالة التجاوز (النبض الأحمر) */
+    .theft-alert {
+        border: 2px solid #ff4b4b;
+        box-shadow: 0 0 20px rgba(255, 75, 75, 0.4);
+        animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+        0% { box-shadow: 0 0 0 0px rgba(255, 75, 75, 0.7); }
+        70% { box-shadow: 0 0 0 15px rgba(255, 75, 75, 0); }
+        100% { box-shadow: 0 0 0 0px rgba(255, 75, 75, 0); }
+    }
+
+    /* العناوين */
+    h1, h2, h3 { color: #58a6ff !important; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    
+    /* المقاييس (Metrics) */
+    [data-testid="stMetricValue"] { color: #39d353 !important; font-size: 28px !important; }
     </style>
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. المحرك الهندسي (Engineering Logic Classes)
+# 2. المنطق الهندسي (Engineering Engine)
 # ==========================================
 
-class GridComponent:
-    """الفئة الأساسية لمكونات الشبكة"""
-    def __init__(self, name, id):
-        self.name = name
-        self.id = id
-        self.status = "ONLINE"
+# ثوابت هندسية
+V_SOURCE = 225.0  # جهد مخرج المحولة
+R_PER_METER = 0.0005  # مقاومة السلك (Ohm/m)
+PRICE_PER_KWH = 50  # السعر الافتراضي للكهرباء في العراق
 
-class Transformer(GridComponent):
-    """تمثيل المحولة الكهربائية مع حسابات الكفاءة والحرارة"""
-    def __init__(self, name, id, capacity_kva=250):
-        super().__init__(name, id)
-        self.capacity = capacity_kva
-        self.temperature = 45.0
-        self.cooling_status = "AUTO"
-        self.frequency = 50.0 # 50Hz Standard for Iraq
-
-    def calculate_thermal_stress(self, current_load_a):
-        # محاكاة ارتفاع الحرارة بناءً على الحمل (الخسائر النحاسية)
-        stress_factor = (current_load_a / 150)**2
-        self.temperature += (stress_factor * 0.5) - 0.1 # تبريد بسيط مستمر
-        self.temperature = max(30, min(self.temperature, 120))
-        return self.temperature
-
-class Consumer:
-    """تمثيل المستهلك (البيت) مع العداد الذكي"""
-    def __init__(self, house_id, base_load):
-        self.id = house_id
-        self.base_load = base_load
-        self.is_connected = True
-        self.smart_meter_reading = 0.0
-
-    def get_real_consumption(self):
-        return self.base_load + np.random.uniform(-2, 2) if self.is_connected else 0
-
-class PowerGridManager:
-    """العقل المدبر للمنظومة - SCADA Master Node"""
-    def __init__(self):
-        self.transformer = Transformer("محطة الرمادي الرئيسية", "TX-01")
-        self.consumers = [Consumer(f"بيت {i}", np.random.randint(10, 25)) for i in range(1, 11)]
-        self.line_resistance = 0.02 # Ohm per segment
-        self.theft_active = False
-        self.theft_location = None
-        self.theft_current = 0.0
-
-    def run_load_flow(self):
-        """محاكاة تدفق الأحمال وحساب الفواقد وهبوط الجهد"""
-        total_legal_i = sum([c.get_real_consumption() for c in self.consumers])
-        actual_i_out = total_legal_i + (self.theft_current if self.theft_active else 0)
-        
-        # قانون أوم: V_drop = I * R
-        v_drop = actual_i_out * self.line_resistance * len(self.consumers)
-        v_final = 225 - v_drop
-        
-        # كفاءة الشبكة
-        efficiency = (total_legal_i / actual_i_out) * 100 if actual_i_out > 0 else 100
-        
-        return {
-            "total_i": actual_i_out,
-            "legal_i": total_legal_i,
-            "v_out": v_final,
-            "efficiency": efficiency,
-            "loss_i": actual_i_out - total_legal_i
-        }
+def calculate_grid_physics(distance, total_current, theft_current=0):
+    # حساب هبوط الجهد: V_drop = I * R
+    total_i = total_current + theft_current
+    v_drop = total_i * (R_PER_METER * distance)
+    v_actual = V_SOURCE - v_drop
+    
+    # حساب القدرة الضائعة (Losses)
+    p_loss_kw = (v_actual * theft_current * 0.9) / 1000 if theft_current > 0 else 0
+    return round(v_actual, 2), round(p_loss_kw, 3)
 
 # ==========================================
-# 3. إدارة الجلسة والبيانات (Session Management)
-# ==========================================
-if 'grid' not in st.session_state:
-    st.session_state.grid = PowerGridManager()
-if 'history' not in st.session_state:
-    st.session_state.history = pd.DataFrame(columns=["Time", "Voltage", "Total_I", "Theft_I", "Temp"])
-if 'logs' not in st.session_state:
-    st.session_state.logs = []
-
-def add_log(msg):
-    timestamp = datetime.now().strftime("%H:%M:%S")
-    st.session_state.logs.insert(0, f"[{timestamp}] >> {msg}")
-
-# ==========================================
-# 4. واجهة المستخدم الرسومية (Advanced UI)
+# 3. إدارة واجهة المستخدم
 # ==========================================
 
-st.markdown("<div class='main-header'>Al-Anbar Smart Grid | SCADA System v4.0</div>", unsafe_allow_html=True)
-st.markdown("<p style='text-align:center; color:#888;'>نظام التحكم والإشراف الذكي - جامعة الأنبار - قسم الهندسة الكهربائية</p>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center;'>⚡ منظومة الأنبار الذكية لإدارة الأحمال</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #8b949e;'>نظام المراقبة والتشخيص اللحظي - جامعة الأنبار</p>", unsafe_allow_html=True)
 
-# القائمة الجانبية المتقدمة
+# القائمة الجانبية (لوحة التحكم السريعة)
 with st.sidebar:
-    st.markdown("<div class='sidebar-title'>⚙️ Control Panel</div>", unsafe_allow_html=True)
+    st.image("https://img.icons8.com/nolan/128/electricity.png", width=100)
+    st.header("🎮 تحكم المحاكاة")
     
-    # محاكاة التحكم في الشبكة
-    mode = st.selectbox("Operation Mode", ["Normal", "Peak Load", "Emergency", "Maintenance"])
+    st.subheader("⚠️ حقن تجاوز")
+    theft_mode = st.selectbox("موقع التجاوز المراد فحصه:", 
+                              ["سليم ✅", "مقطع A (قرب المحولة)", "مقطع B (منتصف الشارع)", "مقطع C (نهاية الشارع)"])
     
+    theft_val = 0
+    if theft_mode != "سليم ✅":
+        theft_val = st.slider("قوة التجاوز (أمبير):", 10, 150, 60)
+        
     st.divider()
-    st.markdown("⚠️ **Simulation Injector**")
-    inject_theft = st.toggle("Inject Power Theft (🪝 تجاوز عشوائي)")
-    if inject_theft:
-        st.session_state.grid.theft_active = True
-        st.session_state.grid.theft_current = st.slider("Theft Current (A)", 10, 100, 45)
-        st.session_state.grid.theft_location = st.selectbox("Target Node", [f"Node {i}" for i in range(1, 6)])
-    else:
-        st.session_state.grid.theft_active = False
-        st.session_state.grid.theft_current = 0
-
-    st.divider()
-    if st.button("🚀 Execute Data Refresh", use_container_width=True):
+    if st.button("♻️ إعادة ضبط الشبكة"):
         st.rerun()
 
-# --- الحسابات والنتائج اللحظية ---
-res = st.session_state.grid.run_load_flow()
-temp = st.session_state.grid.transformer.calculate_thermal_stress(res['total_i'])
+# --- الحسابات المالية والهندسية ---
+legal_load = 95.0
+v_final, p_loss = calculate_grid_physics(250, legal_load, theft_val)
+hourly_cost = p_loss * PRICE_PER_KWH
 
-# عرض المقاييس الرئيسية بتصميم Card
-m1, m2, m3, m4 = st.columns(4)
-m1.metric("Output Voltage", f"{res['v_out']:.1f} V", delta=f"{res['v_out']-220:.1f}V", delta_color="normal")
-m2.metric("Total Line Current", f"{res['total_i']:.1f} A")
-m3.metric("Grid Efficiency", f"{res['efficiency']:.1f} %", delta=f"{res['efficiency']-95:.1f}%")
-m4.metric("Core Temp", f"{temp:.1f} °C", delta=f"{temp-60:.1f}°C", delta_color="inverse")
-
+# الصف الأول: المقاييس الحيوية
 st.divider()
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("جهد الشبكة النهائي", f"{v_final} V", delta=f"{v_final-220:.1f}V")
+m2.metric("الحمل الكلي المجهز", f"{legal_load + theft_val} A")
+m3.metric("القدرة المسروقة", f"{p_loss} kW")
+m4.metric("خسارة الساعة", f"{int(hourly_cost)} IQD")
 
-# --- تبويبات المنظومة (The Multi-Tab System) ---
-tab_viz, tab_analysis, tab_financial, tab_security = st.tabs([
-    "🌐 Network Visualization", "📈 Engineering Analysis", "💰 Economic Impact", "🛡️ Cyber & Protection"
-])
+# الصف الثاني: التمثيل المرئي (الشارع الذكي)
+st.divider()
+st.subheader("📍 خارطة التدفق اللحظية (The Smart Street)")
 
-with tab_viz:
-    st.subheader("📍 Live Power Flow Map")
-    # تمثيل مرئي للشبكة باستخدام الرسم البياني
-    cols = st.columns(6)
-    with cols[0]:
-        st.info("🏢 TX-01\n(Transformer)")
-    for i in range(1, 5):
-        with cols[i]:
-            is_node_stolen = (inject_theft and f"Node {i}" == st.session_state.grid.theft_location)
-            if is_node_stolen:
-                st.error(f"🗼 Node {i}\nALERT: THEFT")
-                add_log(f"CRITICAL: Deviation detected at Node {i} - Loss: {res['loss_i']:.1f}A")
-            else:
-                st.success(f"🗼 Node {i}\nNormal Flow")
-    with cols[5]:
-        st.write("🏁 End of Line")
-    
-    st.progress(res['total_i']/200, text=f"Total Feeder Capacity Usage: {int((res['total_i']/200)*100)}%")
+c1, c2, c3, c4 = st.columns(4)
+
+def draw_node(col, title, subtitle, icon, is_theft=False):
+    css_class = "grid-node theft-alert" if is_theft else "grid-node"
+    col.markdown(f"""
+        <div class='{css_class}'>
+            <div style='font-size: 40px;'>{icon}</div>
+            <div style='font-size: 20px; font-weight: bold; margin-top:10px;'>{title}</div>
+            <div style='font-size: 14px; color: #8b949e;'>{subtitle}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+with c1:
+    draw_node(c1, "المحولة", "محطة الرمادي (01)", "🏢")
+    st.write("---")
+
+with c2:
+    is_hit = (theft_mode == "مقطع A (قرب المحولة)")
+    draw_node(c2, "نقطة توزيع 1", "زقاق المستودع", "🗼", is_hit)
+    if is_hit: st.error("🚨 تجاوز مكتشف هنا!")
+    st.write("---")
+
+with c3:
+    is_hit = (theft_mode == "مقطع B (منتصف الشارع)")
+    draw_node(c3, "نقطة توزيع 2", "قرب المسجد", "🗼", is_hit)
+    if is_hit: st.error("🚨 تجاوز مكتشف هنا!")
+    st.write("---")
+
+with c4:
+    is_hit = (theft_mode == "مقطع C (نهاية الشارع)")
+    draw_node(c4, "نقطة توزيع 3", "نهاية الخط", "🗼", is_hit)
+    if is_hit: st.error("🚨 تجاوز مكتشف هنا!")
+
+# الصف الثالث: التحليل الهندسي (للتقديم للدكتور)
+st.divider()
+tab_math, tab_analysis = st.tabs(["📐 الصيغ الرياضية", "📊 تحليل كفاءة المقطع"])
+
+with tab_math:
+    st.markdown("### المعادلات المستخدمة في حسابات المنظومة")
+    st.latex(r"V_{actual} = V_{source} - (I_{total} \times R_{line} \times L)")
+    st.info("حيث أن $L$ هي المسافة بالمتر، و $R_{line}$ هي المقاومة النوعية للسلك.")
+    st.latex(r"Losses_{IQD} = \frac{V \times I_{theft} \times PF \times \Delta t}{1000} \times Price")
 
 with tab_analysis:
-    st.subheader("📊 Advanced Signal Analysis")
-    
-    # محاكاة سجل البيانات للرسم
-    new_data = pd.DataFrame({
-        "Time": [datetime.now()],
-        "Voltage": [res['v_out']],
-        "Total_I": [res['total_i']],
-        "Theft_I": [res['loss_i']],
-        "Temp": [temp]
-    })
-    st.session_state.history = pd.concat([st.session_state.history, new_data]).tail(30)
-    
-    # رسم بياني متقدم باستخدام Plotly
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=st.session_state.history['Time'], y=st.session_state.history['Voltage'], name='Line Voltage (V)', line=dict(color='#00d4ff')))
-    fig.add_trace(go.Scatter(x=st.session_state.history['Time'], y=st.session_state.history['Total_I'], name='Total Amps (A)', line=dict(color='#ff4b4b')))
-    fig.update_layout(template="plotly_dark", height=400, margin=dict(l=20, r=20, t=20, b=20))
-    st.plotly_chart(fig, use_container_width=True)
+    st.subheader("تقرير جودة الطاقة")
+    efficiency = (legal_load / (legal_load + theft_val)) * 100
+    st.progress(efficiency/100, text=f"كفاءة الشبكة الحالية: {int(efficiency)}%")
+    if efficiency < 70:
+        st.warning("⚠️ كفاءة الشبكة متدنية جداً بسبب التجاوزات، خطر احتراق الأسلاك مرتفع.")
+    else:
+        st.success("✅ جودة النقل ضمن المعايير الهندسية المقبولة.")
 
-with tab_financial:
-    st.subheader("💰 Loss & Revenue Analysis")
-    col_f1, col_f2 = st.columns(2)
-    
-    # حساب الخسائر بالدينار العراقي (IQD)
-    # بافتراض سعر الكيلو واط ساعة 50 دينار
-    power_loss_kw = (res['v_out'] * res['loss_i'] * 0.9) / 1000
-    hourly_money_loss = power_loss_kw * 50
-    
-    with col_f1:
-        st.metric("Power Loss (kW)", f"{power_loss_kw:.2f} kW")
-        st.write(f"تكلفة الطاقة الضائعة حالياً: **{hourly_money_loss:,.0f} دينار/ساعة**")
-    
-    with col_f2:
-        annual_projection = hourly_money_loss * 24 * 365
-        st.metric("Annual Financial Leakage", f"{annual_projection:,.0f} IQD")
-        st.warning("⚠️ هذه الخسائر تؤثر مباشرة على ميزانية الصيانة في محافظة الأنبار.")
-
-with tab_security:
-    st.subheader("🛡️ IoT Security & Protection Relay")
-    col_s1, col_s2 = st.columns(2)
-    
-    with col_s1:
-        st.write("🔒 **Data Integrity Check**")
-        st.code("""
-        def validate_packet(packet):
-            checksum = calculate_crc32(packet)
-            if checksum == packet.received_crc:
-                return "VALID_DATA"
-            else:
-                return "INJECTION_ATTACK_DETECTED"
-        """)
-        st.write("الحالة: **Packet Integrity Verified ✅**")
-        
-    with col_s2:
-        st.write("🚨 **Automatic Protection (Relay)**")
-        if res['total_i'] > 180:
-            st.error("PROTECTION TRIP: Overcurrent Detected!")
-            add_log("RELAY TRIP: Circuit breaker opened due to overcurrent.")
-        else:
-            st.success("RELAY STATUS: Armed & Healthy")
-
-# --- السجل التقني السفلي (The Matrix Style Log) ---
-st.divider()
-st.subheader("📡 SCADA System Logs (Real-time)")
-log_html = "".join([f"<div>{l}</div>" for l in st.session_state.logs[:10]])
-st.markdown(f"<div class='log-container'>{log_html}</div>", unsafe_allow_html=True)
-
-# Footer
-st.markdown("---")
-st.markdown(f"**System Status:** Running | **Master Node:** University of Anbar Lab | **Engineer:** Mohammed Nabeel | **Current Time:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+# تذييل الصفحة
+st.markdown("<br><hr><center>إعداد الطالب: محمد نبيل | جامعة الأنبار - كلية الهندسة - قسم الكهرباء | 2026</center>", unsafe_allow_html=True)
