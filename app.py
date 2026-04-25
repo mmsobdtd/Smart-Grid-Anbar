@@ -1,155 +1,151 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import time
 
 # إعدادات الصفحة
-st.set_page_config(page_title="Al-Anbar Smart Street", layout="wide")
+st.set_page_config(page_title="Al-Anbar Smart Grid - Enterprise Edition", layout="wide")
 
-# --- 1. التنسيق الجمالي (CSS) لجعل الواجهة احترافية ---
+# --- 1. تحسين الواجهة باستخدام CSS ---
 st.markdown("""
     <style>
+    .metric-box {
+        background-color: #ffffff;
+        border-radius: 15px;
+        padding: 20px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        text-align: center;
+        border-bottom: 5px solid #2e7d32;
+    }
     .node-card {
-        background-color: #f0f2f6;
-        border-radius: 10px;
+        background-color: #f8f9fa;
+        border-radius: 12px;
         padding: 15px;
         text-align: center;
-        border: 2px solid #e6e9ef;
+        border: 1px solid #dee2e6;
+        transition: 0.3s;
     }
-    .theft-node {
-        background-color: #ffecec;
-        border: 2px solid #ff4b4b;
-        animation: blinker 1.5s linear infinite;
+    .theft-active {
+        background-color: #fff5f5;
+        border: 2px solid #e03131;
+        box-shadow: 0 0 15px rgba(224, 49, 49, 0.4);
     }
-    @keyframes blinker {
-        50% { opacity: 0.6; }
-    }
-    .stButton>button {
-        width: 100%;
-        border-radius: 20px;
-        font-weight: bold;
+    .alert-log {
+        background-color: #212529;
+        color: #00ff00;
+        padding: 15px;
+        border-radius: 5px;
+        font-family: 'Courier New', Courier, monospace;
+        font-size: 0.9em;
+        height: 200px;
+        overflow-y: auto;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. تهيئة البيانات ---
-if 'theft_loc' not in st.session_state: st.session_state.theft_loc = "لا يوجد"
-if 'step' not in st.session_state: st.session_state.step = 0
+# --- 2. تهيئة الذاكرة والسجلات ---
+if 'alert_history' not in st.session_state: st.session_state.alert_history = []
+if 'total_loss_iqd' not in st.session_state: st.session_state.total_loss_iqd = 0
 
-# استهلاك 5 بيوت (قراءات العدادات الشرعية بالأمبير)
-legal_houses = {
-    "بيت 1": 15, "بيت 2": 12, "بيت 3": 20, "بيت 4": 10, "بيت 5": 18
-}
-total_legal = sum(legal_houses.values())
-
-# --- 3. القائمة الجانبية (لوحة التحكم الاحترافية) ---
+# --- 3. لوحة التحكم الجانبية (Sidebar) ---
 with st.sidebar:
-    st.header("⚡ التحكم بالمنظومة")
-    if st.button("🔄 تحديث القراءات اللحظية", type="primary"):
-        st.session_state.step += 1
+    st.header("🏢 مركز السيطرة والتحكم")
+    st.info("نظام مراقبة شبكة توزيع الأنبار - الإصدار 3.0")
+    
+    if st.button("🔄 سحب بيانات (IoT Live Stream)", type="primary", use_container_width=True):
+        st.toast("جاري سحب القراءات من الحساسات...")
+        time.sleep(0.5)
     
     st.divider()
-    st.subheader("🪝 افتعال تجاوز (للفحص)")
-    options = ["لا يوجد", "بين المحولة وعامود 1", "بين عامود 1 و 2", "بين عامود 2 و 3", "بين عامود 3 و 4"]
-    st.session_state.theft_loc = st.selectbox("اختر مكان التجاوز بدقة:", options)
+    st.subheader("🌡️ الإدارة الحرارية")
+    t_temp = st.slider("درجة حرارة المحولة (°C)", 30, 110, 55)
     
-    if st.button("🗑️ إعادة ضبط النظام"):
-        st.session_state.theft_loc = "لا يوجد"
+    st.subheader("🪝 حقن تجاوز (فحص النظام)")
+    theft_loc = st.selectbox("اختر مكان التجاوز:", 
+                             ["لا يوجد", "مقطع 1 (بداية الشارع)", "مقطع 2 (وسط الشارع)", "مقطع 3 (نهاية الشارع)"])
+    
+    st.divider()
+    if st.button("🗑️ تصفير السجلات المالية"):
+        st.session_state.total_loss_iqd = 0
+        st.session_state.alert_history = []
         st.rerun()
 
-# --- 4. الحسابات الهندسية (القدرة المسحوبة vs المفروضة) ---
-theft_value = 0
-if st.session_state.theft_loc != "لا يوجد":
-    theft_value = 45 # قيمة التجاوز بالأمبير
+# --- 4. المحرك البرمجي (Engineering Engine) ---
+# بيانات افتراضية للبيوت
+legal_load = 85 # أمبير كلي
+theft_val = 55 if theft_loc != "لا يوجد" else 0
+v_base = 220 - (15 if theft_val > 0 else 0) # هبوط الجهد عند السرقة
 
-# القدرة الكلية المسحوبة من المحولة (التيار الفعلي)
-transformer_supply = total_legal + theft_value + np.random.uniform(1, 3) # إضافة فاقد فني بسيط
+# حساب الخسائر المالية
+# فرضية: سعر الأمبير/ساعة = 50 دينار عراقي (لغرض المحاكاة)
+hourly_loss = theft_val * 50 
+st.session_state.total_loss_iqd += hourly_loss
 
-# --- 5. عرض النتائج والتحليل (Header Metrics) ---
-st.title("🏙️ مراقب شارع الأنبار الذكي")
-col_m1, col_m2, col_m3 = st.columns(3)
+# --- 5. واجهة العرض الرئيسية ---
+st.title("⚡ نظام الأنبار الذكي لإدارة الطاقة")
+st.markdown("---")
 
-with col_m1:
-    st.metric("القدرة الخارجة من المحولة", f"{round(transformer_supply, 1)} A")
-with col_m2:
-    st.metric("مجموع استهلاك البيوت (الشرعي)", f"{total_legal} A")
-with col_m3:
-    diff = round(transformer_supply - total_legal, 1)
-    status_color = "normal" if diff < 5 else "inverse"
-    st.metric("الفارق (الضياعات/التجاوز)", f"{diff} A", delta=f"{diff} A", delta_color=status_color)
+# الصف الأول: المقاييس الحيوية (Key Metrics)
+m1, m2, m3, m4 = st.columns(4)
+with m1:
+    st.metric("توليد المحولة الفعلي", f"{legal_load + theft_val} A")
+with m2:
+    st.metric("الحرارة الحالية", f"{t_temp} °C", delta="-5°C" if t_temp < 70 else "+15°C", delta_color="inverse")
+with m3:
+    st.metric("التيار المفقود (تجاوز)", f"{theft_val} A")
+with m4:
+    st.metric("إجمالي الخسائر المالية", f"{format(st.session_state.total_loss_iqd, ',')} IQD", delta=f"{hourly_loss} IQD/h")
 
 st.divider()
 
-# --- 6. تمثيل الشارع (المحولة -> الأعمدة -> البيوت) ---
-st.subheader("📍 الخريطة المرئية لتدفق الطاقة")
-
-# إنشاء 5 أعمدة لتمثيل مسار الشارع
+# الصف الثاني: التمثيل المرئي للشارع (Street Map)
+st.subheader("📍 خارطة التوزيع اللحظية (Live Distribution Map)")
 c1, c2, c3, c4, c5 = st.columns(5)
 
-# دالة لرسم العنصر (Node)
-def draw_node(col, title, icon, subtitle, is_theft=False):
-    css_class = "node-card theft-node" if is_theft else "node-card"
-    col.markdown(f"""
-        <div class="{css_class}">
-            <h3>{icon}</h3>
-            <b>{title}</b><br>
-            <small>{subtitle}</small>
-        </div>
-        """, unsafe_allow_html=True)
+def draw_element(col, title, icon, info, is_alert=False):
+    style = "node-card theft-active" if is_alert else "node-card"
+    col.markdown(f"<div class='{style}'><h2>{icon}</h2><b>{title}</b><br><small>{info}</small></div>", unsafe_allow_html=True)
 
 with c1:
-    draw_node(c1, "المحولة الرئيسية", "⚡", "بداية التغذية")
-    st.write("➡️")
-
+    draw_element(c1, "المحولة", "🏬", f"{t_temp}°C | {v_base}V", t_temp > 85)
 with c2:
-    is_hit = (st.session_state.theft_loc == "بين المحولة وعامود 1")
-    draw_node(c2, "عامود 1", "🗼", "يغذي بيت 1", is_hit)
-    st.caption(f"🏠 بيت 1: {legal_houses['بيت 1']}A")
-    if is_hit: st.error("🪝 تجاوز هنا!")
-    st.write("➡️")
-
+    is_th = (theft_loc == "مقطع 1 (بداية الشارع)")
+    draw_element(c2, "عامود 1", "🗼", "تغذية زقاق 1", is_th)
+    if is_th: st.error("🪝 سرقة مكتشفة!")
 with c3:
-    is_hit = (st.session_state.theft_loc == "بين عامود 1 و 2")
-    draw_node(c3, "عامود 2", "🗼", "يغذي بيت 2", is_hit)
-    st.caption(f"🏠 بيت 2: {legal_houses['بيت 2']}A")
-    if is_hit: st.error("🪝 تجاوز هنا!")
-    st.write("➡️")
-
+    is_th = (theft_loc == "مقطع 2 (وسط الشارع)")
+    draw_element(c3, "عامود 2", "🗼", "تغذية زقاق 2", is_th)
+    if is_th: st.error("🪝 سرقة مكتشفة!")
 with c4:
-    is_hit = (st.session_state.theft_loc == "بين عامود 2 و 3")
-    draw_node(c4, "عامود 3", "🗼", "يغذي بيت 3 و 4", is_hit)
-    st.caption(f"🏠 بيت 3+4: {legal_houses['بيت 3']+legal_houses['بيت 4']}A")
-    if is_hit: st.error("🪝 تجاوز هنا!")
-    st.write("➡️")
-
+    is_th = (theft_loc == "مقطع 3 (نهاية الشارع)")
+    draw_element(c4, "عامود 3", "🗼", "تغذية زقاق 3", is_th)
+    if is_th: st.error("🪝 سرقة مكتشفة!")
 with c5:
-    is_hit = (st.session_state.theft_loc == "بين عامود 3 و 4")
-    draw_node(c5, "عامود 4", "🗼", "يغذي بيت 5", is_hit)
-    st.caption(f"🏠 بيت 5: {legal_houses['بيت 5']}A")
-    if is_hit: st.error("🪝 تجاوز هنا!")
+    draw_element(c5, "نهاية الخط", "🏁", "نقطة التعادل", False)
 
 st.divider()
 
-# --- 7. التقرير التشخيصي النهائي ---
-st.subheader("📝 تقرير المهندس المناوب")
-col_rep1, col_rep2 = st.columns(2)
+# الصف الثالث: التقارير والإنذارات (Reports & Alert System)
+col_rep, col_log = st.columns([1, 1])
 
-with col_rep1:
-    st.info(f"""
-    **مقارنة القدرة:**
-    * المحولة تسحب حالياً: **{round(transformer_supply, 1)} أمبير**.
-    * مجموع عدادات البيوت تسجل: **{total_legal} أمبير**.
-    * نسبة الفاقد غير المفسر: **{round((diff/transformer_supply)*100, 1)}%**.
-    """)
-
-with col_rep2:
-    if st.session_state.theft_loc != "لا يوجد":
-        st.warning(f"""
-        **تحديد الموقع:**
-        تم رصد تجاوز مؤكد في المنطقة الواقعة **[{st.session_state.theft_loc}]**.
-        
-        **الإجراء المطلوب:**
-        إرسال فرقة تفتيش لفحص الأسلاك الممتدة بين هاتين النقطتين.
-        """)
+with col_rep:
+    st.subheader("📝 تقرير الحالة الفني")
+    if t_temp > 80:
+        st.warning("⚠️ تحذير: درجة حرارة المحولة مرتفعة جداً، يرجى تقليل الأحمال.")
+    if theft_val > 0:
+        st.error(f"🚨 تم اكتشاف تجاوز في [{theft_loc}].")
+        # محاكاة إرسال رسالة تليجرام
+        msg = f"تنبيه: سرقة طاقة في {theft_loc} بقيمة {theft_val}A"
+        if msg not in st.session_state.alert_history:
+            st.session_state.alert_history.insert(0, f"{time.strftime('%H:%M:%S')} - {msg}")
+            st.toast("تم إرسال تنبيه إلى هاتف المهندس المناوب (Telegram)")
     else:
-        st.success("الشبكة تعمل بكفاءة عالية. لا توجد مؤشرات على وجود تجاوزات حالياً.")
-    
+        st.success("✅ المنظومة مستقرة، لا توجد تجاوزات حالياً.")
+
+with col_log:
+    st.subheader("📜 سجل أحداث النظام (System Log)")
+    log_content = "<br>".join(st.session_state.alert_history) if st.session_state.alert_history else "No alerts recorded."
+    st.markdown(f"<div class='alert-log'>{log_content}</div>", unsafe_allow_html=True)
+
+# إضافة تحليل الخسائر الاقتصادية
+st.info(f"**ملاحظة اقتصادية:** بناءً على القراءات الحالية، فإن نسبة الهدر المالي تشكل {round((theft_val/(legal_load+theft_val+0.1))*100, 1)}% من إجمالي الطاقة المجهزة لهذا الشارع.")
