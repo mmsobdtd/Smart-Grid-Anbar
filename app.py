@@ -1,161 +1,107 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from datetime import datetime
 
-# ==========================================
-# 1. الإعدادات الجمالية المتقدمة (Professional Dark Theme)
-# ==========================================
-st.set_page_config(page_title="Grid Guardian - Al-Anbar", layout="wide")
+# --- 1. الإعدادات الجمالية الهندسية ---
+st.set_page_config(page_title="Impact Analysis - Al-Anbar Grid", layout="wide")
 
 st.markdown("""
     <style>
-    /* تنسيق الخلفية العامة */
-    .stApp { background-color: #0b0e14; color: #e0e0e0; }
-    
-    /* بطاقات الأعمدة والبيوت */
-    .grid-node {
-        background: linear-gradient(145deg, #161b22, #0d1117);
+    .stApp { background-color: #0d1117; color: #c9d1d9; }
+    .compare-card {
+        background: #161b22;
         border: 1px solid #30363d;
-        border-radius: 15px;
+        border-radius: 10px;
         padding: 20px;
-        text-align: center;
-        box-shadow: 5px 5px 15px rgba(0,0,0,0.3);
         margin-bottom: 20px;
     }
-    
-    /* حالة التجاوز (النبض الأحمر) */
-    .theft-alert {
-        border: 2px solid #ff4b4b;
-        box-shadow: 0 0 20px rgba(255, 75, 75, 0.4);
-        animation: pulse 2s infinite;
-    }
-    
-    @keyframes pulse {
-        0% { box-shadow: 0 0 0 0px rgba(255, 75, 75, 0.7); }
-        70% { box-shadow: 0 0 0 15px rgba(255, 75, 75, 0); }
-        100% { box-shadow: 0 0 0 0px rgba(255, 75, 75, 0); }
-    }
-
-    /* العناوين */
-    h1, h2, h3 { color: #58a6ff !important; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-    
-    /* المقاييس (Metrics) */
-    [data-testid="stMetricValue"] { color: #39d353 !important; font-size: 28px !important; }
+    .diff-text { color: #ff7b72; font-weight: bold; }
+    .normal-text { color: #3fb950; font-weight: bold; }
+    h1, h2 { color: #58a6ff !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# ==========================================
-# 2. المنطق الهندسي (Engineering Engine)
-# ==========================================
+# --- 2. الثوابت والمحرك الهندسي ---
+V_SOURCE = 225.0
+R_LINE = 0.08  # المقاومة الكلية للخط (أوم)
+LEGAL_I = 80.0 # الحمل القانوني الثابت (أمبير)
 
-# ثوابت هندسية
-V_SOURCE = 225.0  # جهد مخرج المحولة
-R_PER_METER = 0.0005  # مقاومة السلك (Ohm/m)
-PRICE_PER_KWH = 50  # السعر الافتراضي للكهرباء في العراق
-
-def calculate_grid_physics(distance, total_current, theft_current=0):
-    # حساب هبوط الجهد: V_drop = I * R
-    total_i = total_current + theft_current
-    v_drop = total_i * (R_PER_METER * distance)
+def get_grid_metrics(theft_i):
+    total_i = LEGAL_I + theft_i
+    v_drop = total_i * R_LINE
     v_actual = V_SOURCE - v_drop
-    
-    # حساب القدرة الضائعة (Losses)
-    p_loss_kw = (v_actual * theft_current * 0.9) / 1000 if theft_current > 0 else 0
-    return round(v_actual, 2), round(p_loss_kw, 3)
+    p_loss_kw = (v_actual * theft_i * 0.9) / 1000 if theft_i > 0 else 0
+    efficiency = (LEGAL_I / total_i) * 100 if total_i > 0 else 100
+    return round(v_actual, 1), round(total_i, 1), round(p_loss_kw, 2), round(efficiency, 1)
 
-# ==========================================
-# 3. إدارة واجهة المستخدم
-# ==========================================
+# --- 3. واجهة المستخدم ---
+st.markdown("<h1 style='text-align: center;'>⚡ لوحة تحليل أثر التجاوزات اللحظي</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center;'>مقارنة البيانات الهندسية قبل وبعد حقن التجاوز</p>", unsafe_allow_html=True)
 
-st.markdown("<h1 style='text-align: center;'>⚡ منظومة الأنبار الذكية لإدارة الأحمال</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #8b949e;'>نظام المراقبة والتشخيص اللحظي - جامعة الأنبار</p>", unsafe_allow_html=True)
-
-# القائمة الجانبية (لوحة التحكم السريعة)
+# القائمة الجانبية للتحكم
 with st.sidebar:
-    st.image("https://img.icons8.com/nolan/128/electricity.png", width=100)
-    st.header("🎮 تحكم المحاكاة")
-    
-    st.subheader("⚠️ حقن تجاوز")
-    theft_mode = st.selectbox("موقع التجاوز المراد فحصه:", 
-                              ["سليم ✅", "مقطع A (قرب المحولة)", "مقطع B (منتصف الشارع)", "مقطع C (نهاية الشارع)"])
-    
-    theft_val = 0
-    if theft_mode != "سليم ✅":
-        theft_val = st.slider("قوة التجاوز (أمبير):", 10, 150, 60)
-        
+    st.header("⚙️ محاكاة الأعطال")
+    theft_val = st.slider("قيمة التجاوز المحقون (أمبير):", 0, 100, 50)
     st.divider()
-    if st.button("♻️ إعادة ضبط الشبكة"):
-        st.rerun()
+    st.info("💡 يتم الآن مقارنة حالة الشبكة مع وبدون هذا الحمل غير القانوني.")
 
-# --- الحسابات المالية والهندسية ---
-legal_load = 95.0
-v_final, p_loss = calculate_grid_physics(250, legal_load, theft_val)
-hourly_cost = p_loss * PRICE_PER_KWH
+# حساب البيانات للحالتين
+v_norm, i_norm, p_norm, eff_norm = get_grid_metrics(0)      # قبل (طبيعي)
+v_curr, i_curr, p_curr, eff_curr = get_grid_metrics(theft_val) # بعد (تجاوز)
 
-# الصف الأول: المقاييس الحيوية
+# --- 4. عرض المقارنة (الجدول والتحليل) ---
+
+st.subheader("📊 جدول المقارنة الفنية")
+
+# بناء جدول البيانات للمقارنة
+comparison_data = {
+    "المقياس الهندسي": ["الجهد النهائي (V)", "التيار الكلي (A)", "القدرة الضائعة (kW)", "كفاءة النقل (%)", "التكلفة المالية (IQD/h)"],
+    "الحالة الطبيعية ✅": [v_norm, i_norm, p_norm, f"{eff_norm}%", "0"],
+    "الحالة الحالية ⚠️": [v_curr, i_curr, p_curr, f"{eff_curr}%", f"{int(p_curr * 50)}"],
+    "الفارق / الأثر": [
+        f"{round(v_curr - v_norm, 1)} V",
+        f"+{round(i_curr - i_norm, 1)} A",
+        f"+{round(p_curr - p_norm, 2)} kW",
+        f"{round(eff_curr - eff_norm, 1)}%",
+        f"+{int(p_curr * 50)} دينار"
+    ]
+}
+
+df_comp = pd.DataFrame(comparison_data)
+st.table(df_comp)
+
 st.divider()
-m1, m2, m3, m4 = st.columns(4)
-m1.metric("جهد الشبكة النهائي", f"{v_final} V", delta=f"{v_final-220:.1f}V")
-m2.metric("الحمل الكلي المجهز", f"{legal_load + theft_val} A")
-m3.metric("القدرة المسروقة", f"{p_loss} kW")
-m4.metric("خسارة الساعة", f"{int(hourly_cost)} IQD")
 
-# الصف الثاني: التمثيل المرئي (الشارع الذكي)
+# --- 5. التحليل البصري (قبل وبعد) ---
+st.subheader("📉 التمثيل المرئي للأثر الهندي")
+col1, col2 = st.columns(2)
+
+with col1:
+    st.markdown("<div class='compare-card'>", unsafe_allow_html=True)
+    st.markdown("### الحالة المستقرة (قبل)")
+    st.write("الشبكة تعمل ضمن الحدود المسموحة.")
+    st.metric("V-Stable", f"{v_norm} V")
+    st.metric("Efficiency", f"{eff_norm}%")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+with col2:
+    st.markdown("<div class='compare-card'>", unsafe_allow_html=True)
+    st.markdown("### الحالة المتأثرة (بعد)")
+    st.write("انهيار في الجهد وزيادة في الفواقد.")
+    st.metric("V-Current", f"{v_curr} V", delta=f"{round(v_curr - v_norm, 1)}V", delta_color="inverse")
+    st.metric("Losses", f"{p_curr} kW", delta=f"+{p_curr}kW", delta_color="inverse")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# --- 6. التفسير الهندسي للدكتور ---
 st.divider()
-st.subheader("📍 خارطة التدفق اللحظية (The Smart Street)")
-
-c1, c2, c3, c4 = st.columns(4)
-
-def draw_node(col, title, subtitle, icon, is_theft=False):
-    css_class = "grid-node theft-alert" if is_theft else "grid-node"
-    col.markdown(f"""
-        <div class='{css_class}'>
-            <div style='font-size: 40px;'>{icon}</div>
-            <div style='font-size: 20px; font-weight: bold; margin-top:10px;'>{title}</div>
-            <div style='font-size: 14px; color: #8b949e;'>{subtitle}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-with c1:
-    draw_node(c1, "المحولة", "محطة الرمادي (01)", "🏢")
-    st.write("---")
-
-with c2:
-    is_hit = (theft_mode == "مقطع A (قرب المحولة)")
-    draw_node(c2, "نقطة توزيع 1", "زقاق المستودع", "🗼", is_hit)
-    if is_hit: st.error("🚨 تجاوز مكتشف هنا!")
-    st.write("---")
-
-with c3:
-    is_hit = (theft_mode == "مقطع B (منتصف الشارع)")
-    draw_node(c3, "نقطة توزيع 2", "قرب المسجد", "🗼", is_hit)
-    if is_hit: st.error("🚨 تجاوز مكتشف هنا!")
-    st.write("---")
-
-with c4:
-    is_hit = (theft_mode == "مقطع C (نهاية الشارع)")
-    draw_node(c4, "نقطة توزيع 3", "نهاية الخط", "🗼", is_hit)
-    if is_hit: st.error("🚨 تجاوز مكتشف هنا!")
-
-# الصف الثالث: التحليل الهندسي (للتقديم للدكتور)
-st.divider()
-tab_math, tab_analysis = st.tabs(["📐 الصيغ الرياضية", "📊 تحليل كفاءة المقطع"])
-
-with tab_math:
-    st.markdown("### المعادلات المستخدمة في حسابات المنظومة")
-    st.latex(r"V_{actual} = V_{source} - (I_{total} \times R_{line} \times L)")
-    st.info("حيث أن $L$ هي المسافة بالمتر، و $R_{line}$ هي المقاومة النوعية للسلك.")
-    st.latex(r"Losses_{IQD} = \frac{V \times I_{theft} \times PF \times \Delta t}{1000} \times Price")
-
-with tab_analysis:
-    st.subheader("تقرير جودة الطاقة")
-    efficiency = (legal_load / (legal_load + theft_val)) * 100
-    st.progress(efficiency/100, text=f"كفاءة الشبكة الحالية: {int(efficiency)}%")
-    if efficiency < 70:
-        st.warning("⚠️ كفاءة الشبكة متدنية جداً بسبب التجاوزات، خطر احتراق الأسلاك مرتفع.")
-    else:
-        st.success("✅ جودة النقل ضمن المعايير الهندسية المقبولة.")
-
-# تذييل الصفحة
-st.markdown("<br><hr><center>إعداد الطالب: محمد نبيل | جامعة الأنبار - كلية الهندسة - قسم الكهرباء | 2026</center>", unsafe_allow_html=True)
+with st.expander("📝 التقرير التحليلي للمناقشة"):
+    st.markdown(f"""
+    عند حقن تجاوز بقيمة **{theft_val} أمبير**، تم ملاحظة الآتي:
+    1. **هبوط الجهد:** انخفض الجهد من {v_norm}V إلى {v_curr}V نتيجة زيادة التيار المار في مقاومة الخط.
+    2. **الخسائر النحاسية:** زادت القدرة المبددة بشكل غير قانوني بمقدار **{p_curr} kW**.
+    3. **الكفاءة:** تراجعت كفاءة النقل بنسبة **{abs(round(eff_curr - eff_norm, 1))}%**.
+    
+    **المعادلة الحاكمة:**
+    """)
+    st.latex(r"V_{drop} = (I_{legal} + I_{theft}) \times R_{line}")
+    
