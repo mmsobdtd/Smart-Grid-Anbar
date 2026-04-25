@@ -3,135 +3,153 @@ import pandas as pd
 import numpy as np
 
 # إعدادات الصفحة
-st.set_page_config(page_title="Al-Anbar Smart Grid - Visual Theft Location", layout="wide")
+st.set_page_config(page_title="Al-Anbar Smart Street", layout="wide")
 
-# --- 1. تهيئة الذاكرة (بدون تحديث تلقائي) ---
-if 'time_step' not in st.session_state: st.session_state.time_step = 0
-if 'transformers' not in st.session_state:
-    st.session_state.transformers = {f"محطة {i}": {"active": True} for i in range(1, 6)}
+# --- 1. التنسيق الجمالي (CSS) لجعل الواجهة احترافية ---
+st.markdown("""
+    <style>
+    .node-card {
+        background-color: #f0f2f6;
+        border-radius: 10px;
+        padding: 15px;
+        text-align: center;
+        border: 2px solid #e6e9ef;
+    }
+    .theft-node {
+        background-color: #ffecec;
+        border: 2px solid #ff4b4b;
+        animation: blinker 1.5s linear infinite;
+    }
+    @keyframes blinker {
+        50% { opacity: 0.6; }
+    }
+    .stButton>button {
+        width: 100%;
+        border-radius: 20px;
+        font-weight: bold;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-# --- 2. واجهة العناوين ---
-st.title("⚡ محاكي الشبكة الذكية: تتبع التجاوزات الدقيق (Al-Anbar SCADA)")
-st.markdown("### **تحليل هبوط القدرة وتحديد الموقع بين الأعمدة**")
+# --- 2. تهيئة البيانات ---
+if 'theft_loc' not in st.session_state: st.session_state.theft_loc = "لا يوجد"
+if 'step' not in st.session_state: st.session_state.step = 0
 
-# --- 3. القائمة الجانبية (محاكاة التجاوز الموضعي) ---
-st.sidebar.header("🕹️ لوحة المحاكاة والتحكم")
-if st.sidebar.button("🔄 سحب بيانات جديدة (Step)", use_container_width=True):
-    st.session_state.time_step += 1
-
-st.sidebar.divider()
-st.sidebar.header("⚠️ محاكاة تجاوز موضعي")
-st.sidebar.write("اختر المقطع (السلك) الذي سيتم رمي التجاوز عليه:")
-
-# المقاطع تمثل المسافة بين الأعمدة والمنازل
-segments = ["لا يوجد تجاوز", 
-            "بين محولة وعامود 1", 
-            "بين عامود 1 و 2", 
-            "بين عامود 2 و 3",
-            "بين عامود 3 و 4"]
-
-target_segment = st.sidebar.selectbox("موقع الربط غير القانوني:", segments)
-
-st.sidebar.divider()
-if st.sidebar.button("♻️ تصفير النظام"):
-    st.session_state.time_step = 0
-    st.session_state.alert_history = []
-    st.rerun()
-
-# --- 4. محاكاة الشبكة والقياس التفاضلي ---
-# استهلاك المنازل الشرعية المربوطة بكل مقطع (بالأمبير)
-houses_load = {
-    "مقطع 1": 20, 
-    "مقطع 2": 18, 
-    "مقطع 3": 22,
-    "مقطع 4": 15
+# استهلاك 5 بيوت (قراءات العدادات الشرعية بالأمبير)
+legal_houses = {
+    "بيت 1": 15, "بيت 2": 12, "بيت 3": 20, "بيت 4": 10, "بيت 5": 18
 }
+total_legal = sum(legal_houses.values())
 
-line_loss_margin = 2.0 
-total_expected_i = sum(houses_load.values())
-
-# إذا كان هناك تجاوز، نضيف تياراً مخفياً في المقطع المحدد
-theft_current = 0
-if target_segment != "لا يوجد تجاوز":
-    theft_current = np.random.uniform(40, 60) 
-
-# حساب التيارات الفعلية المتدفقة في الخطوط
-actual_i_in_1 = total_expected_i + (theft_current if target_segment != "لا يوجد تجاوز" else 0)
-actual_i_in_2 = actual_i_in_1 - houses_load["مقطع 1"] - (theft_current if target_segment == "بين محولة وعامود 1" else 0)
-actual_i_in_3 = actual_i_in_2 - houses_load["مقطع 2"] - (theft_current if target_segment == "بين عامود 1 و 2" else 0)
-actual_i_in_4 = actual_i_in_3 - houses_load["مقطع 3"] - (theft_current if target_segment == "بين عامود 2 و 3" else 0)
-
-network_data = []
-location_alert = None
-
-# دالة لتحليل المقطع وكشف التجاوز
-def analyze_segment(seg_name, i_in, next_i_in, legal_load):
-    current_loss = i_in - (next_i_in + legal_load)
+# --- 3. القائمة الجانبية (لوحة التحكم الاحترافية) ---
+with st.sidebar:
+    st.header("⚡ التحكم بالمنظومة")
+    if st.button("🔄 تحديث القراءات اللحظية", type="primary"):
+        st.session_state.step += 1
     
-    if current_loss > line_loss_margin:
-        status = "🚨 تجاوز مكتشف!"
-        color = "#800080" # بنفسجي
-    else:
-        status = "✅ سليم"
-        color = "#d4edda" # أخضر
-        
-    network_data.append({
-        "المقطع": seg_name,
-        "التيار الداخل (A)": round(i_in, 1),
-        "التيار الخارج (A)": round(next_i_in, 1),
-        "استهلاك العدادات الشرعية (A)": round(legal_load, 1),
-        "التيار المفقود (A)": round(current_loss, 1),
-        "التشخيص": status,
-        "color": color
-    })
+    st.divider()
+    st.subheader("🪝 افتعال تجاوز (للفحص)")
+    options = ["لا يوجد", "بين المحولة وعامود 1", "بين عامود 1 و 2", "بين عامود 2 و 3", "بين عامود 3 و 4"]
+    st.session_state.theft_loc = st.selectbox("اختر مكان التجاوز بدقة:", options)
+    
+    if st.button("🗑️ إعادة ضبط النظام"):
+        st.session_state.theft_loc = "لا يوجد"
+        st.rerun()
 
-analyze_segment("مقطـع 1 (محولة -> عامود 1)", actual_i_in_1, actual_i_in_2, houses_load["مقطع 1"])
-analyze_segment("مقطـع 2 (عامود 1 -> عامود 2)", actual_i_in_2, actual_i_in_3, houses_load["مقطع 2"])
-analyze_segment("مقطـع 3 (عامود 2 -> عامود 3)", actual_i_in_3, actual_i_in_4, houses_load["مقطع 3"])
-analyze_segment("مقطـع 4 (عامود 3 -> نهاية الخط)", actual_i_in_4, 0, houses_load["مقطع 4"]) 
+# --- 4. الحسابات الهندسية (القدرة المسحوبة vs المفروضة) ---
+theft_value = 0
+if st.session_state.theft_loc != "لا يوجد":
+    theft_value = 45 # قيمة التجاوز بالأمبير
 
-df_network = pd.DataFrame(network_data)
+# القدرة الكلية المسحوبة من المحولة (التيار الفعلي)
+transformer_supply = total_legal + theft_value + np.random.uniform(1, 3) # إضافة فاقد فني بسيط
 
-# --- 5. مقارنة القدرة الشاملة (Overall Audit) ---
-st.subheader("📊 تحليل الطاقة ومقارنة القدرة الشاملة")
-col_p1, col_p2, col_p3 = st.columns(3)
+# --- 5. عرض النتائج والتحليل (Header Metrics) ---
+st.title("🏙️ مراقب شارع الأنبار الذكي")
+col_m1, col_m2, col_m3 = st.columns(3)
 
-total_legal_consumption = sum(houses_load.values())
-actual_supplied_power = actual_i_in_1 
-power_difference = actual_supplied_power - total_legal_consumption
+with col_m1:
+    st.metric("القدرة الخارجة من المحولة", f"{round(transformer_supply, 1)} A")
+with col_m2:
+    st.metric("مجموع استهلاك البيوت (الشرعي)", f"{total_legal} A")
+with col_m3:
+    diff = round(transformer_supply - total_legal, 1)
+    status_color = "normal" if diff < 5 else "inverse"
+    st.metric("الفارق (الضياعات/التجاوز)", f"{diff} A", delta=f"{diff} A", delta_color=status_color)
 
-with col_p1:
-    st.metric("القدرة الخارجة من المحولة", f"{round(actual_supplied_power, 1)}A", help="التيار الفعلي المقاس عند مخرج المحطة.")
-with col_p2:
-    st.metric("مجموع استهلاك البيوت (المفروض)", f"{round(total_legal_consumption, 1)}A", help="مجموع ما تسجله عدادات المنازل الشرعية.")
-with col_p3:
-    if power_difference > 5.0:
-        st.metric("القدرة المفقودة (التجاوز)", f"{round(power_difference, 1)}A", delta=f"{round(power_difference, 1)}A", delta_color="inverse")
-    else:
-        st.metric("الفاقد الفني (طبيعي)", f"{round(power_difference, 1)}A", delta=None)
-
-# --- 6. التحديد الدقيق لمكان التجاوز (Final Diagnose) ---
 st.divider()
-st.subheader("📍 التحديد الدقيق لموقع التجاوز وتتبع الأثر")
 
-# العثور على المقطع المصاب
-theft_segment_row = df_network[df_network["التشخيص"].str.contains("🚨")].first_valid_index()
+# --- 6. تمثيل الشارع (المحولة -> الأعمدة -> البيوت) ---
+st.subheader("📍 الخريطة المرئية لتدفق الطاقة")
 
-if theft_segment_row is not None:
-    infected_segment = df_network.loc[theft_segment_row, "المقطع"]
-    current_stolen = df_network.loc[theft_segment_row, "التيار المفقود (A)"]
+# إنشاء 5 أعمدة لتمثيل مسار الشارع
+c1, c2, c3, c4, c5 = st.columns(5)
+
+# دالة لرسم العنصر (Node)
+def draw_node(col, title, icon, subtitle, is_theft=False):
+    css_class = "node-card theft-node" if is_theft else "node-card"
+    col.markdown(f"""
+        <div class="{css_class}">
+            <h3>{icon}</h3>
+            <b>{title}</b><br>
+            <small>{subtitle}</small>
+        </div>
+        """, unsafe_allow_html=True)
+
+with c1:
+    draw_node(c1, "المحولة الرئيسية", "⚡", "بداية التغذية")
+    st.write("➡️")
+
+with c2:
+    is_hit = (st.session_state.theft_loc == "بين المحولة وعامود 1")
+    draw_node(c2, "عامود 1", "🗼", "يغذي بيت 1", is_hit)
+    st.caption(f"🏠 بيت 1: {legal_houses['بيت 1']}A")
+    if is_hit: st.error("🪝 تجاوز هنا!")
+    st.write("➡️")
+
+with c3:
+    is_hit = (st.session_state.theft_loc == "بين عامود 1 و 2")
+    draw_node(c3, "عامود 2", "🗼", "يغذي بيت 2", is_hit)
+    st.caption(f"🏠 بيت 2: {legal_houses['بيت 2']}A")
+    if is_hit: st.error("🪝 تجاوز هنا!")
+    st.write("➡️")
+
+with c4:
+    is_hit = (st.session_state.theft_loc == "بين عامود 2 و 3")
+    draw_node(c4, "عامود 3", "🗼", "يغذي بيت 3 و 4", is_hit)
+    st.caption(f"🏠 بيت 3+4: {legal_houses['بيت 3']+legal_houses['بيت 4']}A")
+    if is_hit: st.error("🪝 تجاوز هنا!")
+    st.write("➡️")
+
+with c5:
+    is_hit = (st.session_state.theft_loc == "بين عامود 3 و 4")
+    draw_node(c5, "عامود 4", "🗼", "يغذي بيت 5", is_hit)
+    st.caption(f"🏠 بيت 5: {legal_houses['بيت 5']}A")
+    if is_hit: st.error("🪝 تجاوز هنا!")
+
+st.divider()
+
+# --- 7. التقرير التشخيصي النهائي ---
+st.subheader("📝 تقرير المهندس المناوب")
+col_rep1, col_rep2 = st.columns(2)
+
+with col_rep1:
+    st.info(f"""
+    **مقارنة القدرة:**
+    * المحولة تسحب حالياً: **{round(transformer_supply, 1)} أمبير**.
+    * مجموع عدادات البيوت تسجل: **{total_legal} أمبير**.
+    * نسبة الفاقد غير المفسر: **{round((diff/transformer_supply)*100, 1)}%**.
+    """)
+
+with col_rep2:
+    if st.session_state.theft_loc != "لا يوجد":
+        st.warning(f"""
+        **تحديد الموقع:**
+        تم رصد تجاوز مؤكد في المنطقة الواقعة **[{st.session_state.theft_loc}]**.
+        
+        **الإجراء المطلوب:**
+        إرسال فرقة تفتيش لفحص الأسلاك الممتدة بين هاتين النقطتين.
+        """)
+    else:
+        st.success("الشبكة تعمل بكفاءة عالية. لا توجد مؤشرات على وجود تجاوزات حالياً.")
     
-    # إرسال التنبيه التشخيصي
-    st.error(f"🪝 إنذار أمني: تم رصد تجاوز مؤكد في [{infected_segment}]. يرجى إرسال فرق الصيانة للتتبع الدقيق بين هاتين النقطتين. التيار المفقود يقدر بـ {current_stolen}A.")
-else:
-    st.success("✅ جميع خطوط النقل آمنة ولا يوجد تسريب للطاقة.")
-
-# عرض الجدول التحليلي التفصيلي
-st.write("يوضح الجدول التالي حسابات تدقيق الطاقة (Energy Audit) لكل مقطع بين المحولة والمنازل:")
-
-def style_feeder(val):
-    if '🚨' in str(val): return 'background-color: #800080; color: white; font-weight: bold' # بنفسجي
-    if '✅' in str(val): return 'background-color: #d4edda' # أخضر
-    return ''
-
-st.table(df_network.drop(columns=['color']).style.map(style_feeder, subset=['التشخيص']))
