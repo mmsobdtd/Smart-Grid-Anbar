@@ -128,4 +128,3 @@ while True:
             for m in st.session_state.msg_history[:5]: st.write(f"🔹 {m}")
 
     time.sleep(1)
-    ج
