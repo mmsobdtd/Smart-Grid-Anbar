@@ -3,153 +3,120 @@ import pandas as pd
 import numpy as np
 import time
 
-# --- 1. إعدادات الصفحة والتنسيق الاحترافي ---
-st.set_page_config(page_title="Al-Anbar Grid - Engineering Edition", layout="wide")
+# --- 1. إعدادات الصفحة والتنسيق ---
+st.set_page_config(page_title="Al-Anbar Smart Grid - Autonomous System", layout="wide")
 
 st.markdown("""
     <style>
-    .stApp { background-color: #ffffff; color: #1a1a1a; }
-    .street-line {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 20px 0;
-    }
+    .stApp { background-color: #ffffff; }
     .node-box {
         background: #f8f9fa;
         border: 1px solid #dee2e6;
         border-radius: 12px;
         padding: 10px;
         text-align: center;
-        min-width: 100px;
         box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
     }
-    .wire {
-        flex-grow: 1;
-        height: 4px;
-        background: #ced4da;
-        margin: 0 5px;
-        position: relative;
-    }
-    .wire-theft {
-        background: #fa5252 !important;
-        box-shadow: 0 0 10px #fa5252;
-    }
-    .theft-active {
-        border: 2px solid #e03131 !important;
-        background-color: #fff5f5 !important;
-    }
-    .engineer-panel {
-        background-color: #f1f3f5;
-        border-right: 5px solid #228be6;
-        padding: 15px;
-        border-radius: 10px;
-        margin-top: 20px;
-    }
-    .stButton>button {
-        width: 100%;
-        border-radius: 8px;
-        font-weight: bold;
-    }
+    .wire { flex-grow: 1; height: 4px; background: #ced4da; margin: 0 5px; }
+    .wire-theft { background: #fa5252 !important; box-shadow: 0 0 10px #fa5252; }
+    .theft-active { border: 2px solid #e03131 !important; background-color: #fff5f5 !important; }
+    .stButton>button { width: 100%; border-radius: 8px; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. إدارة الحالة (Session State) ---
+# --- 2. إدارة الحالة والبيانات الواقعية ---
+# قيم تجاوز واقعية (بالكيلو واط) لكل منطقة
+THEFT_MAP = {
+    1: 4.2,  # بين بيت 1 و 2
+    2: 8.7,  # بين بيت 2 و 3
+    3: 12.4, # بين بيت 3 و 4
+    4: 15.8  # بين بيت 4 و 5
+}
+
 for i in range(1, 5):
     if f'pole_{i}_theft' not in st.session_state:
         st.session_state[f'pole_{i}_theft'] = False
-if 'messages_sent' not in st.session_state:
-    st.session_state.messages_sent = []
+if 'log' not in st.session_state: st.session_state.log = []
 
-# --- 3. المحرك الهندسي والمالي ---
-LEGAL_LOAD = 112.5 # kW
-THEFT_UNIT = 28.0  # kW
-active_count = sum([st.session_state[f'pole_{i}_theft'] for i in range(1, 5)])
-total_theft = active_count * THEFT_UNIT
-transformer_power = LEGAL_LOAD + total_theft + 1.5 # + losses
+# --- 3. المحرك الهندسي ---
+LEGAL_LOAD = 105.0 # kW (الاستهلاك الطبيعي للزقاق)
+total_theft_kw = sum([THEFT_MAP[i] for i in range(1, 5) if st.session_state[f'pole_{i}_theft']])
+transformer_output = LEGAL_LOAD + total_theft_kw + 2.1 # فواقد فنية
 
-hourly_loss = int(total_theft * 50) # 50 IQD/kWh
+# حسابات مالية (50 دينار للـ kWh)
+hourly_loss = int(total_theft_kw * 50)
 monthly_loss = hourly_loss * 24 * 30
 
 # --- 4. الواجهة الرئيسية ---
-st.title("⚡ نظام رصد وتتبع التجاوزات الذكي - محافظة الأنبار")
-st.markdown(f"**إشراف وتصميم:** المهندس محمد نبيل")
+st.title("⚡ نظام المراقبة الذاتي والتبليغ التلقائي - زقاق الأنبار")
+st.markdown("**إعداد الطالب:** محمد نبيل | **الحالة:** نظام الفرز والتبليغ المباشر نشط")
 
 st.divider()
 
-# قسم موازنة القدرة (Dashboard)
-col_p1, col_p2, col_p3 = st.columns(3)
-with col_p1:
-    st.metric("قدرة المحولة الكلية", f"{round(transformer_total_power if 'transformer_total_power' in locals() else transformer_power, 1)} kW")
-with col_p2:
-    st.metric("مجموع استهلاك البيوت", f"{LEGAL_LOAD} kW")
-with col_p3:
-    st.metric("القدرة المسروقة", f"{round(total_theft, 1)} kW", delta=f"{total_theft} kW", delta_color="inverse")
+# داشبورد القراءات
+c1, c2, c3 = st.columns(3)
+c1.metric("قدرة المحولة الكلية", f"{round(transformer_output, 1)} kW")
+c2.metric("مجموع قراءات العدادات", f"{LEGAL_LOAD} kW")
+c3.metric("القدرة المفقودة (سرقة)", f"{round(total_theft_kw, 1)} kW", delta=f"{round(total_theft_kw, 1)} kW", delta_color="inverse")
 
 st.divider()
 
-# --- 5. تمثيل الشارع (The Street Flow) ---
-st.subheader("🏙️ محاكاة المسار الكهربائي للزقاق")
-st.info("توضح الخارطة أدناه تسلسل الأعمدة بين البيوت. اللون الأحمر يشير إلى مكان السرقة الدقيق.")
+# --- 5. تمثيل الشارع والتحكم ---
+st.subheader("🏙️ خارطة المسار الكهربائي وتحديد نقاط التجاوز")
 
-# دالة لرسم المقطع
-def draw_street_segment():
-    cols = st.columns([1, 0.5, 1, 0.5, 1, 0.5, 1, 0.5, 1])
+street = st.columns([1, 0.5, 1, 0.5, 1, 0.5, 1, 0.5, 1])
+
+with street[0]: st.markdown("<div class='node-box'>🏢<br>المحولة</div>", unsafe_allow_html=True)
+
+for i in range(1, 5):
+    # تمثيل السلك
+    with street[2*i - 1]:
+        is_th = st.session_state[f'pole_{i}_theft']
+        st.markdown(f"<div class='wire {'wire-theft' if is_th else ''}'></div>", unsafe_allow_html=True)
     
-    # محولة
-    with cols[0]: st.markdown("<div class='node-box'>🏢<br>المحولة</div>", unsafe_allow_html=True)
-    
-    # أعمدة وبيوت
-    for i in range(1, 5):
-        # سلك
-        with cols[2*i - 1]:
-            is_theft = st.session_state[f'pole_{i}_theft']
-            class_name = "wire wire-theft" if is_theft else "wire"
-            st.markdown(f"<div class='{class_name}'></div>", unsafe_allow_html=True)
+    # تمثيل العمود والتحكم
+    with street[2*i]:
+        is_th = st.session_state[f'pole_{i}_theft']
+        style = "node-box theft-active" if is_th else "node-box"
+        st.markdown(f"<div class='{style}'>🗼<br><b>عـامود {i}</b><br><small>{THEFT_MAP[i]} kW</small></div>", unsafe_allow_html=True)
+        if st.button("تغيير", key=f"p_{i}"):
+            st.session_state[f'pole_{i}_theft'] = not st.session_state[f'pole_{i}_theft']
+            st.rerun()
+
+st.divider()
+
+# --- 6. منطق الإرسال التلقائي بعد 3 ثواني ---
+st.subheader("💰 التقرير المالي ونظام الإشعارات الآلي")
+f1, f2 = st.columns([1.5, 1])
+
+with f1:
+    st.markdown(f"**خسارة الساعة:** <span style='color:red; font-size:24px;'>{hourly_loss:,} IQD</span>", unsafe_allow_html=True)
+    st.markdown(f"**خسارة الشهر:** <span style='color:red; font-size:20px;'>{monthly_loss:,} IQD</span>", unsafe_allow_html=True)
+
+with f2:
+    if total_theft_kw > 0:
+        # محاكاة الانتظار والإرسال التلقائي
+        with st.status("🔍 جاري تحليل التجاوز المكتشف...", expanded=True) as status:
+            st.write("تحليل فرق الجهد والتيار...")
+            time.sleep(1.5)
+            st.write("تحديد الإحداثيات الجغرافية للمقطع المصاب...")
+            time.sleep(1.5) # مجموع الوقت 3 ثواني
+            status.update(label="✅ تم إرسال البلاغ للمهندس المقيم!", state="complete", expanded=False)
         
-        # عمود (بين البيوت)
-        with cols[2*i]:
-            is_theft = st.session_state[f'pole_{i}_theft']
-            style = "node-box theft-active" if is_theft else "node-box"
-            st.markdown(f"<div class='{style}'>🗼<br><b>عامود {i}</b><br><small>بين بيت {i} و {i+1}</small></div>", unsafe_allow_html=True)
-            if st.button("تغيير" , key=f"btn_{i}"):
-                st.session_state[f'pole_{i}_theft'] = not st.session_state[f'pole_{i}_theft']
-                st.rerun()
-
-draw_street_segment()
-
-st.divider()
-
-# --- 6. نظام مراسلة المهندس المقيم ---
-col_fin, col_msg = st.columns([1.5, 1])
-
-with col_fin:
-    st.subheader("💰 التحليل المالي للهدر")
-    c1, c2 = st.columns(2)
-    c1.markdown(f"**الخسارة بالساعة:** <h2 style='color:#e03131;'>{hourly_loss:,} IQD</h2>", unsafe_allow_html=True)
-    c2.markdown(f"**الخسارة بالشهر:** <h3 style='color:#e03131;'>{monthly_loss:,} IQD</h3>", unsafe_allow_html=True)
-
-with col_msg:
-    st.subheader("📧 إرسال إشعار للمهندس")
-    if active_count > 0:
-        st.warning(f"يوجد حالياً {active_count} تجاوزات نشطة.")
-        if st.button("📩 إرسال تقرير تجاوز للمهندس المقيم", type="primary"):
-            # محاكاة إرسال الرسالة
-            locations = [f"بين بيت {i} وبيت {i+1}" for i in range(1,5) if st.session_state[f'pole_{i}_theft']]
-            report_msg = f"تنبيه: تم رصد تجاوز في زقاق الأنبار. المواقع: {', '.join(locations)}. القيمة المفقودة: {total_theft}kW."
-            st.session_state.messages_sent.append(f"[{time.strftime('%H:%M')}] {report_msg}")
-            st.success("✅ تم إرسال الرسالة للمهندس المقيم بنجاح!")
-            st.toast("رسالة تليجرام قيد الإرسال...")
+        # إضافة البلاغ للسجل
+        locs = [f"بين {i} و {i+1}" for i in range(1, 5) if st.session_state[f'pole_{i}_theft']]
+        alert = f"[{time.strftime('%H:%M:%S')}] تم التبليغ عن تجاوز {total_theft_kw}kW في المواقع: {', '.join(locs)}"
+        if not st.session_state.log or alert.split(']')[1] != st.session_state.log[0].split(']')[1]:
+            st.session_state.log.insert(0, alert)
+            st.toast("🚨 رسالة عاجلة أرسلت للمهندس!")
     else:
-        st.write("الشبكة سليمة، لا حاجة لإرسال تقارير.")
+        st.success("✅ الشبكة مستقرة ولا توجد تجاوزات.")
 
-# عرض سجل الرسائل المرسلة
+# السجل التاريخي للرسائل
 with st.expander("📂 سجل الرسائل الصادرة للمهندس"):
-    if st.session_state.messages_sent:
-        for m in st.session_state.messages_sent:
-            st.write(f"🔹 {m}")
-    else:
-        st.write("لا توجد رسائل مرسلة بعد.")
+    for l in st.session_state.log[:5]:
+        st.write(f"🔹 {l}")
 
 st.divider()
-st.markdown("<center>نظام المراقبة الذكي v9.0 | جامعة الأنبار - كلية الهندسة 2026</center>", unsafe_allow_html=True)
+st.markdown("<center>نظام التحكم الذكي v10.0 | جامعة الأنبار 2026</center>", unsafe_allow_html=True)
+د
