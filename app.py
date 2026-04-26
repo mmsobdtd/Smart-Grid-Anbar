@@ -25,7 +25,7 @@ def send_telegram_msg(text):
     except:
         return False
 
-# --- 2. التنسيق البصري الاحترافي ---
+# --- 2. التنسيق البصري ---
 st.set_page_config(page_title="Al-Anbar Smart Grid v17.5", layout="wide")
 
 st.markdown("""
@@ -43,7 +43,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. إدارة الحالة (لحفظ بيانات التجاوز) ---
+# --- 3. إدارة الحالة ---
 if 'theft_state' not in st.session_state:
     st.session_state.theft_state = {1: False, 2: False, 3: False, 4: False}
 if 'msg_history' not in st.session_state:
@@ -56,11 +56,9 @@ st.markdown("<h1 class='main-header'>⚡ نظام الرصد والتبليغ ا
 st.markdown("<div class='sub-header'>إعداد الطلبة: محمد نبيل بردان | مشتاق طالب جلال</div>", unsafe_allow_html=True)
 st.divider()
 
-# --- 4. تعريف الهيكل الثابت (الأزرار والبيوت) ---
-# هذه المنطقة تُرسم مرة واحدة فقط لتجنب خطأ Duplicate Key
 metrics_placeholder = st.empty()
 
-# رسم الخريطة (العواميد والبيوت)
+# رسم الخريطة
 street_cols = st.columns([1, 0.8, 1, 0.8, 1, 0.8, 1, 0.8, 1])
 street_cols[0].markdown("<div class='node-box'>🏢<br><b>المحولة</b></div>", unsafe_allow_html=True)
 
@@ -71,7 +69,6 @@ for i in range(1, 5):
         box_style = "node-box theft-active" if is_active else "node-box"
         st.markdown(f"<div class='{box_style}'>🗼<br><small>{POLE_INFO[i]['desc']}</small></div>", unsafe_allow_html=True)
         
-        # الأزرار خارج اللوب المستمر
         btn_label = "إيقاف" if is_active else "حقن"
         if st.button(btn_label, key=f"btn_p_{i}"):
             st.session_state.theft_state[i] = not st.session_state.theft_state[i]
@@ -82,19 +79,17 @@ street_cols[8].markdown("<div class='house-box'>🏠<br><small>بيت 5</small><
 st.divider()
 report_placeholder = st.empty()
 
-# --- 5. حلقة التحديث المستمر (للبيانات فقط) ---
+# --- حلقة التحديث المستمر ---
 THEFT_VALS = {1: 4.150, 2: 8.320, 3: 11.450, 4: 15.600}
 LEGAL_BASE = 108.40  
 
 while True:
-    # حساب القيم بناءً على الحالة المخزونة
     active_indices = [i for i, v in st.session_state.theft_state.items() if v]
     total_theft_kw = sum([THEFT_VALS[i] for i in active_indices])
     current_legal = LEGAL_BASE + np.random.uniform(-0.1, 0.1)
     transformer_out = current_legal + total_theft_kw + (current_legal * 0.02)
     loss_h = int(total_theft_kw * 50)
 
-    # تحديث المقاييس العلوية بدون "رمشة"
     with metrics_placeholder.container():
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("قدرة المحولة", f"{transformer_out:.2f} kW")
@@ -102,7 +97,6 @@ while True:
         m3.metric("سحب البيوت", f"{current_legal:.2f} kW")
         m4.metric("خسارة الساعة", f"{loss_h:,} IQD")
 
-    # تحديث سجل البلاغات والتنبيهات
     with report_placeholder.container():
         c_left, c_right = st.columns([1, 1])
         with c_left:
@@ -115,22 +109,28 @@ while True:
                 if len(active_indices) != st.session_state.last_count:
                     t_str = datetime.now().strftime("%H:%M:%S")
                     
-                    # بناء رسالة التليجرام
-                    msg = f"🚨 *تنبيه تجاوز (v17.5)*\n"
-                    msg += f"المواقع: {', '.join([POLE_INFO[x]['desc'] for x in active_indices])}\n"
-                    msg += f"القدرة: {total_theft_kw:.2f} kW\n"
+                    # --- بناء الرسالة لتطابق الصورة المرفقة ---
+                    msg = f"🚨 *بلاغ سرقة طاقة - شبكة الأنبار*\n\n"
+                    msg += f"📍 *المواقع:*\n"
+                    for idx in active_indices:
+                        msg += f"• {POLE_INFO[idx]['desc']}\n"
                     
-                    # رابط جوجل ماب
-                    lat, lon = POLE_INFO[active_indices[0]]['lat'], POLE_INFO[active_indices[0]]['lon']
-                    msg += f"📍 [فتح الموقع على الخريطة](https://www.google.com/maps?q={lat},{lon})\n"
-                    msg += f"🕒 الوقت: {t_str}"
+                    msg += f"\n📊 *البيانات:*\n"
+                    msg += f"- السرقة: {total_theft_kw:.2f} kW\n"
+                    msg += f"- الهدر: h/{loss_h:,}\n"
+                    
+                    msg += f"\n🗺️ *رابط Google Maps:*\n"
+                    for idx in active_indices:
+                        lat, lon = POLE_INFO[idx]['lat'], POLE_INFO[idx]['lon']
+                        msg += f"[موقع {POLE_INFO[idx]['desc']}](https://www.google.com/maps?q={lat},{lon})\n"
                     
                     if send_telegram_msg(msg):
-                        st.session_state.msg_history.insert(0, f"[{t_str}] تم التبليغ عن {len(active_indices)} نقاط")
-                        st.toast("📱 تم إرسال الإحداثيات للموبايل")
+                        st.session_state.msg_history.insert(0, f"[{t_str}] تم التبليغ")
+                        st.toast("📱 تم إرسال البلاغ بنفس التنسيق الجديد!")
                     st.session_state.last_count = len(active_indices)
             else:
                 st.session_state.last_count = 0
-                st.success("🛡️ النظام: الشبكة مستقرة ولا يوجد تجاوز.")
+                st.success("🛡️ النظام: الشبكة مستقرة وآمنة.")
 
     time.sleep(1)
+    
