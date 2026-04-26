@@ -5,11 +5,11 @@ import time
 import requests
 from datetime import datetime
 
-# --- 1. إعدادات البوت والتبليغ ---
+# --- 1. إعدادات التبليغ ---
 BOT_TOKEN = "8732709590:AAG8kxcfijO6ZpjmIjk2Rj_JFxB5gNMarZs"
 CHAT_ID = "5625855161"
 
-POLE_DATA = {
+POLE_INFO = {
     1: {"desc": "بين بيت 1 و بيت 2", "lat": 33.4245, "lon": 43.2678},
     2: {"desc": "بين بيت 2 و بيت 3", "lat": 33.4255, "lon": 43.2688},
     3: {"desc": "بين بيت 3 و بيت 4", "lat": 33.4265, "lon": 43.2698},
@@ -25,8 +25,8 @@ def send_telegram_msg(text):
     except:
         return False
 
-# --- 2. التنسيق البصري (نفس الشكل القديم) ---
-st.set_page_config(page_title="Al-Anbar Smart Grid - Final Fix", layout="wide")
+# --- 2. التنسيق البصري الاحترافي ---
+st.set_page_config(page_title="Al-Anbar Smart Grid v17.5", layout="wide")
 
 st.markdown("""
     <style>
@@ -39,84 +39,98 @@ st.markdown("""
     }
     .house-box { background: #e7f5ff; border: 1px solid #74c0fc; border-radius: 10px; padding: 5px; text-align: center; }
     .theft-active { border: 2px solid #e03131 !important; background-color: #fff5f5 !important; }
-    .stButton>button { width: 100%; border-radius: 8px; font-weight: bold; }
+    .stButton>button { width: 100%; border-radius: 8px; font-weight: bold; height: 40px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. إدارة الحالة (Session State) ---
-if 'msg_history' not in st.session_state: st.session_state.msg_history = []
-if 'last_alert_count' not in st.session_state: st.session_state.last_alert_count = 0
-for i in range(1, 5):
-    if f'inj_{i}' not in st.session_state: st.session_state[f'inj_{i}'] = False
+# --- 3. إدارة الحالة (لحفظ بيانات التجاوز) ---
+if 'theft_state' not in st.session_state:
+    st.session_state.theft_state = {1: False, 2: False, 3: False, 4: False}
+if 'msg_history' not in st.session_state:
+    st.session_state.msg_history = []
+if 'last_count' not in st.session_state:
+    st.session_state.last_count = 0
 
-# --- 4. واجهة العرض الثابتة ---
-st.markdown("<h1 class='main-header'>⚡ نظام الرصد والتبليغ الذكي (تتبع المنازل)</h1>", unsafe_allow_html=True)
+# الواجهة الرئيسية
+st.markdown("<h1 class='main-header'>⚡ نظام الرصد والتبليغ الذكي v17.5</h1>", unsafe_allow_html=True)
 st.markdown("<div class='sub-header'>إعداد الطلبة: محمد نبيل بردان | مشتاق طالب جلال</div>", unsafe_allow_html=True)
 st.divider()
 
-# حاويات التحديث اللحظي (هذه التي تتحدث داخل اللوب)
-metrics_area = st.empty()
+# --- 4. تعريف الهيكل الثابت (الأزرار والبيوت) ---
+# هذه المنطقة تُرسم مرة واحدة فقط لتجنب خطأ Duplicate Key
+metrics_placeholder = st.empty()
 
-# رسمة الشارع والأزرار (تُرسم مرة واحدة خارج اللوب لمنع خطأ Duplicate Key)
+# رسم الخريطة (العواميد والبيوت)
 street_cols = st.columns([1, 0.8, 1, 0.8, 1, 0.8, 1, 0.8, 1])
 street_cols[0].markdown("<div class='node-box'>🏢<br><b>المحولة</b></div>", unsafe_allow_html=True)
 
 for i in range(1, 5):
     street_cols[2*i-1].markdown(f"<div class='house-box'>🏠<br><small>بيت {i}</small></div>", unsafe_allow_html=True)
     with street_cols[2*i]:
-        is_on = st.session_state[f'inj_{i}']
-        style = "node-box theft-active" if is_on else "node-box"
-        st.markdown(f"<div class='{style}'>🗼<br><small>{POLE_DATA[i]['desc']}</small></div>", unsafe_allow_html=True)
-        # الزر هنا مستقر ولا يتكرر إنشاؤه
-        if st.button("إيقاف" if is_on else "حقن", key=f"btn_{i}"):
-            st.session_state[f'inj_{i}'] = not st.session_state[f'inj_{i}']
+        is_active = st.session_state.theft_state[i]
+        box_style = "node-box theft-active" if is_active else "node-box"
+        st.markdown(f"<div class='{box_style}'>🗼<br><small>{POLE_INFO[i]['desc']}</small></div>", unsafe_allow_html=True)
+        
+        # الأزرار خارج اللوب المستمر
+        btn_label = "إيقاف" if is_active else "حقن"
+        if st.button(btn_label, key=f"btn_p_{i}"):
+            st.session_state.theft_state[i] = not st.session_state.theft_state[i]
             st.rerun()
 
 street_cols[8].markdown("<div class='house-box'>🏠<br><small>بيت 5</small></div>", unsafe_allow_html=True)
 
 st.divider()
-report_area = st.empty() # حاوية للبلاغات والأسعار
+report_placeholder = st.empty()
 
-# --- 5. حلقة التحديث المنطقية (للأرقام فقط) ---
-THEFT_MAP = {1: 4.150, 2: 8.320, 3: 11.450, 4: 15.600}
+# --- 5. حلقة التحديث المستمر (للبيانات فقط) ---
+THEFT_VALS = {1: 4.150, 2: 8.320, 3: 11.450, 4: 15.600}
 LEGAL_BASE = 108.40  
 
 while True:
-    active_indices = [i for i in range(1, 5) if st.session_state[f'inj_{i}']]
-    total_theft_kw = sum([THEFT_MAP[i] for i in active_indices])
+    # حساب القيم بناءً على الحالة المخزونة
+    active_indices = [i for i, v in st.session_state.theft_state.items() if v]
+    total_theft_kw = sum([THEFT_VALS[i] for i in active_indices])
     current_legal = LEGAL_BASE + np.random.uniform(-0.1, 0.1)
     transformer_out = current_legal + total_theft_kw + (current_legal * 0.02)
     loss_h = int(total_theft_kw * 50)
-    loss_m = loss_h * 24 * 30
 
-    # تحديث الأرقام العلوية
-    with metrics_area.container():
+    # تحديث المقاييس العلوية بدون "رمشة"
+    with metrics_placeholder.container():
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("قدرة المحولة", f"{transformer_out:.2f} kW")
-        m2.metric("القدرة المسروقة", f"{total_theft_kw:.2f} kW", delta=f"{len(active_indices)} نقاط" if active_indices else None, delta_color="inverse")
-        m3.metric("مجموع سحب البيوت", f"{current_legal:.2f} kW")
-        m4.metric("خسارة الشهر (IQD)", f"{loss_m:,}")
+        m2.metric("القدرة المسروقة", f"{total_theft_kw:.2f} kW", delta=f"{len(active_indices)} تجاوز" if active_indices else None, delta_color="inverse")
+        m3.metric("سحب البيوت", f"{current_legal:.2f} kW")
+        m4.metric("خسارة الساعة", f"{loss_h:,} IQD")
 
-    # تحديث منطقة التقارير والتنبيهات
-    with report_area.container():
-        c_l, c_r = st.columns([1, 1])
-        with c_l:
-            st.markdown(f"**تكلفة الهدر المالي:** <span style='color:red; font-size:20px; font-weight:bold;'>{loss_h:,} IQD/h</span>")
-            with st.expander("📂 سجل البلاغات"):
+    # تحديث سجل البلاغات والتنبيهات
+    with report_placeholder.container():
+        c_left, c_right = st.columns([1, 1])
+        with c_left:
+            st.write(f"**حالة الهدر المالي اللحظي:** :red[{loss_h:,} دينار/ساعة]")
+            with st.expander("📂 سجل البلاغات الأخيرة"):
                 for m in st.session_state.msg_history[:3]: st.write(f"🔹 {m}")
         
-        with c_r:
+        with c_right:
             if active_indices:
-                if len(active_indices) != st.session_state.last_alert_count:
+                if len(active_indices) != st.session_state.last_count:
                     t_str = datetime.now().strftime("%H:%M:%S")
-                    msg = f"🚨 *تنبيه تجاوز جديد*\nالمواقع: {', '.join([POLE_DATA[x]['desc'] for x in active_indices])}\nالقدرة: {total_theft_kw:.2f} kW\n📍 [خريطة جوجل](https://www.google.com/maps?q={POLE_DATA[active_indices[0]]['lat']},{POLE_DATA[active_indices[0]]['lon']})\n🕒 {t_str}"
+                    
+                    # بناء رسالة التليجرام
+                    msg = f"🚨 *تنبيه تجاوز (v17.5)*\n"
+                    msg += f"المواقع: {', '.join([POLE_INFO[x]['desc'] for x in active_indices])}\n"
+                    msg += f"القدرة: {total_theft_kw:.2f} kW\n"
+                    
+                    # رابط جوجل ماب
+                    lat, lon = POLE_INFO[active_indices[0]]['lat'], POLE_INFO[active_indices[0]]['lon']
+                    msg += f"📍 [فتح الموقع على الخريطة](https://www.google.com/maps?q={lat},{lon})\n"
+                    msg += f"🕒 الوقت: {t_str}"
                     
                     if send_telegram_msg(msg):
                         st.session_state.msg_history.insert(0, f"[{t_str}] تم التبليغ عن {len(active_indices)} نقاط")
-                        st.toast("📱 تم إرسال الإشعار!")
-                    st.session_state.last_alert_count = len(active_indices)
+                        st.toast("📱 تم إرسال الإحداثيات للموبايل")
+                    st.session_state.last_count = len(active_indices)
             else:
-                st.session_state.last_alert_count = 0
-                st.success("🛡️ الشبكة مستقرة وآمنة.")
+                st.session_state.last_count = 0
+                st.success("🛡️ النظام: الشبكة مستقرة ولا يوجد تجاوز.")
 
     time.sleep(1)
