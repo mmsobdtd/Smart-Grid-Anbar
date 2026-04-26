@@ -120,4 +120,3 @@ while True:
                 st.success("🛡️ الشبكة مستقرة وآمنة.")
 
     time.sleep(1)
-    
