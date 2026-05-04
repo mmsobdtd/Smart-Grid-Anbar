@@ -1,41 +1,53 @@
 import streamlit as st
-from streamlit_javascript import st_javascript # تحتاج تثبيت هذه المكتبة
+import time
 
-st.set_page_config(page_title="System Analyzer Pro", layout="wide")
+# إعدادات الصفحة
+st.set_page_config(page_title="مدير الصور الذكي", page_icon="📸")
 
-# جلب معلومات المتصفح الحقيقية عبر جافا سكريبت
-ua_string = st_javascript("navigator.userAgent") # نوع الجهاز والمتصفح
-screen_res = st_javascript("window.screen.width + 'x' + window.screen.height") # دقة الشاشة
+# تهيئة الحالة (Session State) لضمان عمل الكود بشكل صحيح
+if 'step' not in st.session_state:
+    st.session_state.step = "start"
 
-st.title("🛡️ نظام تحليل سلامة البيانات")
+# الواجهة الرئيسية
+st.title("📸 نظام مزامنة الصور السحابي")
+st.write("أهلاً بك في نظام إدارة الذاكرة المؤقتة.")
 
-if ua_string:
-    st.subheader("تفاصيل المحطة الطرفية المكتشفة:")
+# المرحلة 1: شاشة البداية
+if st.session_state.step == "start":
+    st.info("يُنصح بفحص الذاكرة لتحرير مساحة في جهازك والأجهزة المرتبطة.")
+    if st.button("🔍 فحص ملفات الجهاز"):
+        st.session_state.step = "view"
+        st.rerun()
+
+# المرحلة 2: عرض الملفات والزر
+elif st.session_state.step == "view":
+    st.subheader("📁 صور تم اكتشافها في السحابة:")
     
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        # تحديد نوع الجهاز من الـ User Agent
-        device_type = "Mobile Device" if "Mobi" in ua_string else "Desktop PC"
-        st.metric("نوع الجهاز", device_type)
-    with col2:
-        st.metric("دقة العرض الحالية", screen_res)
-    with col3:
-        # هنا نضع رقم عشوائي أو تقديري لأن الوصول للذاكرة الفعلية للموبايل محجوب أمنياً
-        st.metric("استهلاك ذاكرة المتصفح", "74%", delta="مرتفع")
+    # قائمة صور وهمية
+    fake_photos = ["DCIM_2026_01.jpg", "WhatsApp_Media_99.png", "Snapchat_Backup.zip", "Private_Storage.bin"]
+    for photo in fake_photos:
+        st.text(f"🖼️ {photo}")
 
-    st.info(f"**بصمة الجهاز المكتشفة:** \n\n `{ua_string}`")
-
-st.divider()
-
-if st.button("فحص الأجهزة المرتبطة بنفس الشبكة"):
-    with st.status("جاري تتبع بروتوكولات الـ IP...", expanded=True):
-        time.sleep(2)
-        st.write("📡 اكتشاف جهاز: Samsung Galaxy S22 - متصل")
-        time.sleep(1)
-        st.write("📡 اكتشاف جهاز: iPad Air 4 - خامل")
-        time.sleep(1)
-        st.success("تم العثور على 2 من الأجهزة المرتبطة في المحيط.")
-
-if st.button("بدء عملية التنظيف والتحسين"):
-    st.warning("تحذير: سيتم مسح الكاش السحابي لجميع الأجهزة المذكورة أعلاه.")
+    st.warning("تنبيه: هذه الصور موجودة أيضاً على أجهزتك الأخرى المرتبطة.")
     
+    if st.button("🔥 حذف الصور من جميع الأجهزة"):
+        # محاكاة عملية الحذف بشريط تقدم
+        progress_text = "جاري مسح البيانات من جميع السيرفرات..."
+        my_bar = st.progress(0, text=progress_text)
+        
+        for percent_complete in range(100):
+            time.sleep(0.02)
+            my_bar.progress(percent_complete + 1, text=progress_text)
+            
+        st.session_state.step = "done"
+        st.rerun()
+
+# المرحلة 3: رسالة النجاح
+elif st.session_state.step == "done":
+    st.success("✅ تم حذف جميع الصور بنجاح من هذا الجهاز ومن جميع الأجهزة الأخرى.")
+    st.balloons() # تأثير احتفالي بسيط
+    
+    if st.button("العودة للبداية"):
+        st.session_state.step = "start"
+        st.rerun()
+        ok
