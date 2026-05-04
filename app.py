@@ -2,118 +2,102 @@ import streamlit as st
 import time
 import random
 
-# إعداد الصفحة لتبدو احترافية
-st.set_page_config(page_title="TERMINAL: ACCESS RESTRICTED", page_icon="☣️", layout="centered")
+# إعدادات الواجهة الرسمية
+st.set_page_config(page_title="System Integrity & Data Optimizer", page_icon="⚙️", layout="wide")
 
-# القوالب الجمالية (CSS بسيط لجعل الخط يبدو كأنه Terminal)
-st.markdown("""
-    <style>
-    .reportview-container {
-        background: #0e1117;
-    }
-    .stCodeBlock {
-        background-color: #002b36 !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+# إدارة الجلسة (Session State)
+if 'step' not in st.session_state:
+    st.session_state.step = "initial"
 
-# إدارة مراحل التطبيق
-if 'stage' not in st.session_state:
-    st.session_state.stage = 0
+# دالة لتحديث المرحلة
+def move_to(next_step):
+    st.session_state.step = next_step
+    st.rerun()
 
-def next_stage():
-    st.session_state.stage += 1
-
-# --- المرحلة 0: شاشة الدخول المحظور ---
-if st.session_state.stage == 0:
-    st.error("⚠️ WARNING: SYSTEM ENCRYPTED")
-    st.title("☣️ مشروع الاختراق العالمي - البروتوكول صفر")
-    st.write("محاولة الوصول إلى قاعدة بيانات الصور السحابية...")
-    
-    if st.button("🔓 كسر الجدار الناري (Bypass Firewall)"):
-        with st.status("جاري اختراق الحماية...", expanded=True) as status:
-            st.write("جاري حقن الكود في الثغرة 0x882...")
-            time.sleep(1)
-            st.write("تم تجاوز بروتوكول SSL...")
-            time.sleep(1)
-            status.update(label="تم الاختراق بنجاح!", state="complete", expanded=False)
-        next_stage()
-        st.rerun()
-
-# --- المرحلة 1: فك تشفير الملفات ---
-elif st.session_state.stage == 1:
-    st.subheader("🕵️ جاري سحب البيانات من الأجهزة القريبة...")
+# --- الواجهة الرئيسية: فحص التوافق ---
+if st.session_state.step == "initial":
+    st.title("⚙️ معالج تكامل البيانات السحابية (v4.2.1)")
+    st.info("تم اكتشاف تضخم في سجلات الصور المؤقتة (Metadata Bloat). يوصى بإجراء فحص عميق.")
     
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("🔍 فحص ذاكرة الجهاز"):
-            st.info("جاري البحث عن ملفات .jpg, .png, .mp4")
-            next_stage()
-            st.rerun()
+        st.metric(label="حالة الذاكرة", value="89%", delta="حرجة", delta_color="inverse")
     with col2:
-        if st.button("📡 تعقب المزامنة السحابية"):
-            st.toast("تم العثور على 4 أجهزة مرتبطة بنفس الحساب!")
+        st.metric(label="الأجهزة المرتبطة", value="5 أجهزة", delta="نشط")
 
-# --- المرحلة 2: عرض الملفات "المسربة" ---
-elif st.session_state.stage == 2:
-    st.markdown("### 📁 الملفات التي تم العثور عليها في 'الخادم المظلم':")
+    if st.button("بدء الفحص التشخيصي (Deep Scan)"):
+        with st.status("جاري فحص قطاعات الذاكرة...", expanded=True) as status:
+            time.sleep(1.5)
+            st.write("🔍 جاري فحص الروابط العميقة (Deep Links)...")
+            time.sleep(1)
+            st.write("🔗 تم التحقق من بروتوكول المزامنة العالمي...")
+            status.update(label="اكتمل الفحص: تم العثور على ملفات مكررة", state="complete")
+        move_to("results")
+
+# --- واجهة النتائج: عرض الملفات الوهمية ---
+elif st.session_state.step == "results":
+    st.header("📊 نتائج تحليل البيانات")
+    st.write("تم العثور على الكائنات التالية في التخزين الموزع:")
     
-    fake_logs = [
-        "Partition_A: IMG_DCIM_8821.jpg (Encrypted)",
-        "Partition_B: PRIVATE_VAULT_01.png (Decrypted)",
-        "System: Cloud_Backup_2026.zip",
-        "Hidden: Hidden_Folder_Donot_Open.bin"
+    # قائمة ملفات تبدو تقنية جداً
+    files = [
+        {"name": "IMG_DCIM_RESOURCE_001.dat", "size": "4.2 MB", "type": "Image Fragment"},
+        {"name": "CLOUD_SYNC_CACHE_88.tmp", "size": "12.8 MB", "type": "Visual Metadata"},
+        {"name": "USER_DATA_MEDIA_RECOVERY.bin", "size": "1.1 GB", "type": "Encrypted Media"},
+        {"name": "THUMBNAIL_GEN_V2.log", "size": "512 KB", "type": "System File"},
     ]
     
-    for log in fake_logs:
-        st.code(log, language="bash")
+    st.table(files)
+
+    with st.expander("🛠️ خيارات متقدمة (للمحترفين فقط)"):
+        st.checkbox("إعادة محاذاة القطاعات (Sector Realignment)", value=True)
+        st.checkbox("تفريغ سجلات الـ Hash السحابية", value=True)
+        st.write("**ملاحظة:** سيتم تطبيق التغييرات على جميع المحطات الطرفية المرتبطة.")
 
     st.divider()
-    st.markdown("#### 🚨 خيارات التدمير النهائي")
     
-    col_a, col_b, col_c = st.columns(3)
+    col_run, col_cancel = st.columns([1, 4])
+    with col_run:
+        if st.button("تنفيذ التنظيف الشامل"):
+            move_to("executing")
+    with col_cancel:
+        if st.button("إلغاء العملية"):
+            move_to("initial")
+
+# --- واجهة التنفيذ: المحاكاة المعقدة ---
+elif st.session_state.step == "executing":
+    st.warning("⚠️ جاري تنفيذ بروتوكول مسح البيانات الموزعة. لا تغلق المتصفح.")
     
-    with col_a:
-        if st.button("🛑 إلغاء العملية"):
-            st.session_state.stage = 0
-            st.rerun()
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    log_area = st.empty()
     
-    with col_b:
-        if st.button("👁️ عرض الصور (وهمي)"):
-            st.warning("فشل: الملفات محمية بكلمة مرور 'الروت'")
+    logs = ""
+    for i in range(101):
+        time.sleep(0.04)
+        progress_bar.progress(i)
+        status_text.text(f"جاري معالجة القطاع: {hex(random.randint(0x1000, 0xFFFF))}")
+        
+        if i % 10 == 0:
+            new_log = f"Done: Purging Node_{random.randint(1,9)}... OK\n"
+            logs += new_log
+            log_area.code(logs)
             
-    with col_c:
-        # الزر الذي طلبه المستخدم
-        if st.button("🔥 حذف الكل (WIPE ALL)"):
-            next_stage()
-            st.rerun()
+    move_to("final")
 
-# --- المرحلة 3: عملية الحذف الوهمية ---
-elif st.session_state.stage == 3:
-    st.header("⚡ جاري تنفيذ بروتوكول الحذف الذاتي...")
+# --- الواجهة النهائية: رسالة التأكيد ---
+elif st.session_state.step == "final":
+    st.success("✅ اكتملت عملية تحسين البيانات بنجاح")
     
-    progress_text = "تدمير البيانات من الخوادم العالمية..."
-    my_bar = st.progress(0, text=progress_text)
-
-    for percent_complete in range(100):
-        time.sleep(0.05)
-        my_bar.progress(percent_complete + 1, text=f"جاري الحذف من الجهاز الموصل {random.randint(10, 99)}: {percent_complete}%")
-    
-    next_stage()
-    st.rerun()
-
-# --- المرحلة النهائية ---
-elif st.session_state.stage == 4:
-    st.balloons()
-    st.success("✅ MISSION ACCOMPLISHED")
     st.markdown("""
-    ### تم حذف الصور من جميع الأجهزة المرتبطة نهائياً!
-    * تم مسح الذاكرة المؤقتة (Cache).
-    * تم تعطيل النسخ الاحتياطي السحابي.
-    * تم إرسال أمر التدمير الذاتي للملفات المشفرة.
+    ### تقرير الحالة النهائي:
+    * **الجهاز الحالي:** تم حذف جميع الصور المؤقتة والملفات المكتشفة.
+    * **المزامنة السحابية:** تم إرسال أمر المسح لـ **5 أجهزة** مرتبطة.
+    * **النتيجة:** تم تحرير مساحة **1.1 GB** من جميع المصادر.
     """)
     
-    if st.button("إعادة تشغيل النظام 🔄"):
-        st.session_state.stage = 0
-        st.rerun()
+    st.info("ملاحظة: قد تستغرق التغييرات ما يصل إلى 5 دقائق لتظهر على الأجهزة الأخرى.")
+    
+    if st.button("العودة إلى لوحة التحكم"):
+        move_to("initial")
         
