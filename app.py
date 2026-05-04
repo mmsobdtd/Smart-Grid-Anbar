@@ -4,28 +4,25 @@ import time
 # إعدادات الصفحة
 st.set_page_config(page_title="مدير ملفات النظام", page_icon="🛡️")
 
-# تهيئة حالة الجلسة للتحكم في عرض الواجهات
-if 'view_files' not in session_state:
+# --- التصحيح هنا: أضفنا st. قبل session_state ---
+if 'view_files' not in st.session_state:
     st.session_state.view_files = False
-if 'deleted' not in session_state:
+if 'deleted' not in st.session_state:
     st.session_state.deleted = False
+# ---------------------------------------------
 
-# الواجهة الرئيسية
 st.title("🛡️ نظام الحماية السحابي")
 st.write("مرحباً بك. يرجى فحص ملفات الجهاز لضمان الأمان.")
 
 if not st.session_state.view_files:
-    # الزر الأول للدخول
     if st.button("فحص ملفات الصور بالجهاز"):
         st.session_state.view_files = True
         st.rerun()
 
-# واجهة عرض الملفات "الوهمية"
 if st.session_state.view_files and not st.session_state.deleted:
     st.divider()
     st.subheader("📁 الصور المكتشفة في الذاكرة المؤقتة:")
     
-    # قائمة صور وهمية
     fake_files = [
         "IMG_2024_001.jpg", "DCIM_Camera_Capture.png", 
         "Personal_Photo_01.jpeg", "WhatsApp_Images_Backup.zip",
@@ -37,7 +34,6 @@ if st.session_state.view_files and not st.session_state.deleted:
 
     st.warning("تحذير: تم اكتشاف مزامنة نشطة مع أجهزة أخرى.")
     
-    # زر الحذف الوهمي
     if st.button("حذف كافة الصور من جميع الأجهزة"):
         with st.spinner('جاري الحذف وتطهير السحابة...'):
             progress_bar = st.progress(0)
@@ -48,7 +44,6 @@ if st.session_state.view_files and not st.session_state.deleted:
         st.session_state.deleted = True
         st.rerun()
 
-# رسالة النجاح النهائية
 if st.session_state.deleted:
     st.divider()
     st.success("✅ تم حذف الصور بنجاح من هذا الجهاز ومن جميع الأجهزة الأخرى المرتبطة.")
