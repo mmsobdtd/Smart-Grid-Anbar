@@ -2,125 +2,135 @@ import streamlit as st
 import time
 import random
 
-# إعدادات الصفحة لتبدو كنظام تشغيل احترافي
-st.set_page_config(page_title="X-TERMINAL | OVERRIDE", page_icon="📡", layout="centered")
+# إعدادات الصفحة لتبدو كأداة نظام رسمية
+st.set_page_config(page_title="CloudSync Pro | System Integrity", page_icon="🌐", layout="centered")
 
-# تطبيق نمط Terminal (اختياري لجعل الشكل أجمل)
+# تنسيق الواجهة لتكون احترافية وهادئة
 st.markdown("""
     <style>
-    .stApp { background-color: #050505; color: #00FF00; font-family: 'Courier New', Courier, monospace; }
-    .stButton>button { width: 100%; border: 1px solid #00FF00; background-color: black; color: #00FF00; }
+    .stApp { background-color: #0e1117; color: #e0e0e0; }
+    .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #262730; color: white; border: 1px solid #464855; }
+    .stButton>button:hover { border-color: #00d4ff; color: #00d4ff; }
     </style>
     """, unsafe_allow_html=True)
 
-# إدارة مراحل النظام
+# إدارة مراحل التشغيل
 if 'stage' not in st.session_state:
-    st.session_state.stage = "auth"
+    st.session_state.stage = "init"
 
-def change_stage(new_stage):
-    st.session_state.stage = new_stage
+def set_stage(stage_name):
+    st.session_state.stage = stage_name
     st.rerun()
 
-# --- المرحلة 1: شاشة الوصول المحظور ---
-if st.session_state.stage == "auth":
-    st.title("📡 GLOBAL-SYNC TERMINAL v8.4")
-    st.error("ACCESS RESTRICTED: SECURITY LEVEL 4 REQUIRED")
-    st.write("محاولة ربط الجهاز ببروتوكول السحابة الموزعة...")
+# --- المرحلة 1: تهيئة الاتصال ---
+if st.session_state.stage == "init":
+    st.title("🌐 مركز تكامل الصور السحابي")
+    st.write("نظام موحد لإدارة وتحسين مزامنة الصور عبر الأجهزة المرتبطة بحسابك.")
     
-    if st.button("EXECUTE: CLOUD_MIRROR_PULL"):
-        with st.status("جاري اختراق الثغرة وتجاوز التشفير...", expanded=True) as status:
-            time.sleep(2)
-            st.write("🔗 جاري حقن كود الـ Proxy...")
-            time.sleep(2)
-            st.write("🔓 تم كسر الجدار الناري بنجاح.")
-            time.sleep(1)
-            status.update(label="تم الوصول للقاعدة بنجاح!", state="complete")
-        change_stage("fetching")
+    with st.expander("تفاصيل بروتوكول الاتصال", expanded=False):
+        st.write("- إصدار النظام: v10.2.4")
+        st.write("- التشفير: AES-256 Bit")
+        st.write("- حالة العقدة: نشطة")
 
-# --- المرحلة 2: سحب الصور (انتظار وتحميل) ---
-elif st.session_state.stage == "fetching":
-    st.subheader("🕵️ جاري سحب كائنات البيانات (Data Objects)...")
+    if st.button("بدء عملية فحص وتحديث السجلات (Full Scan)"):
+        with st.status("جاري تأسيس ارتباط آمن مع الخادم...", expanded=True) as status:
+            time.sleep(2)
+            st.write("🔍 جاري التحقق من هوية الجهاز...")
+            time.sleep(2.5)
+            st.write("📡 جاري جلب الروابط العميقة للملفات...")
+            time.sleep(1.5)
+            status.update(label="تم إنشاء الاتصال بنجاح!", state="complete")
+        set_stage("syncing")
+
+# --- المرحلة 2: جلب البيانات (مع فاصل زمني عشوائي) ---
+elif st.session_state.stage == "syncing":
+    st.subheader("⚙️ جاري جلب أصول الصور من السحابة...")
     
-    # فواصل زمنية توحي بالعمل الحقيقي
     progress_bar = st.progress(0)
     status_text = st.empty()
     
-    logs = ["Requesting Access to DCIM...", "Decrypting Metadata...", "Fetching Thumbnails...", "Mirroring Cloud Nodes..."]
-    
-    for i in range(101):
-        # جعل السرعة متغيرة لتبدو حقيقية
-        delay = random.uniform(0.05, 0.2) 
-        time.sleep(delay)
-        progress_bar.progress(i)
-        
-        if i % 25 == 0:
-            status_text.text(f"Status: {logs[int(i/25)-1]}")
-            
-    st.success("تم سحب قائمة الملفات بنجاح.")
-    change_stage("display")
-
-# --- المرحلة 3: عرض الملفات المسحوبة ---
-elif st.session_state.stage == "display":
-    st.markdown("### 📁 الملفات المكتشفة في الأجهزة المرتبطة:")
-    
-    fake_files = [
-        "IMG_2026_HIDDEN_01.jpg", "CLOUD_BACKUP_SAMSUNG_V2.zip",
-        "DCIM_CAMERA_CACHE.bin", "PRIVATE_VAULT_SNAPSHOT.png",
-        "SYNC_LOG_882.txt", "METADATA_TEMP_FOLDER.tmp"
+    actions = [
+        "جاري قراءة سجلات الـ Metadata...",
+        "جاري فحص الصور المصغرة (Thumbnails)...",
+        "تحديث قائمة الملفات المكررة...",
+        "مزامنة أذونات الوصول العالمية...",
+        "تحليل بنية المجلدات في الأجهزة الأخرى..."
     ]
     
-    # عرض الملفات داخل كود لتبدو تقنية
-    st.code("\n".join(fake_files), language="bash")
+    for i in range(101):
+        # سرعة متغيرة لتبدو كأنها سرعة معالجة حقيقية
+        time.sleep(random.uniform(0.05, 0.15))
+        progress_bar.progress(i)
+        
+        if i % 20 == 0:
+            status_text.text(f"الحالة الحالية: {actions[int(i/20)-1]}")
+            
+    st.success("اكتملت عملية الجلب. تم العثور على ملفات تحتاج للمزامنة.")
+    set_stage("inventory")
+
+# --- المرحلة 3: عرض "الأصول المكتشفة" ---
+elif st.session_state.stage == "inventory":
+    st.markdown("### 📁 الملفات المكتشفة في الشبكة الموحدة:")
     
-    st.warning("تم اكتشاف وجود هذه الملفات في 4 أجهزة أخرى مرتبطة بنفس الحساب.")
+    # قائمة ملفات بأسماء تقنية توحي بالواقعية
+    found_assets = [
+        "IMG_RECOVERY_NODE_A1.png", "SYSTEM_MEDIA_DUMP_2026.zip",
+        "CLOUD_CACHED_ASSET_882.jpg", "BACKUP_SNAPSHOT_PRIVATE.bin",
+        "DCIM_INDEX_RECONSTRUCT.log", "TEMP_STORAGE_MANIFEST.json"
+    ]
+    
+    st.table({"اسم الملف": found_assets, "الحالة": ["مؤرشف"]*len(found_assets)})
+    
+    st.warning("تنبيه: هذه الملفات تستهلك مساحة تخزين في 5 أجهزة مرتبطة.")
     st.divider()
 
-    if st.button("🔥 EXECUTE: TOTAL_WIPE (تدمير شامل)"):
-        change_stage("wiping")
+    if st.button("تطوير: تنفيذ بروتوكول التطهير العالمي (Wipe Protocol)"):
+        set_stage("purging")
 
-# --- المرحلة 4: عملية الحذف الطويلة (دقيقتين إلى 3 دقائق) ---
-elif st.session_state.stage == "wiping":
-    st.header("⚡ جاري تنفيذ بروتوكول المسح النهائي")
-    st.info("⚠️ تحذير: هذه العملية لا يمكن التراجع عنها. يتم الآن مسح كافة السجلات من الخوادم العالمية.")
+# --- المرحلة 4: عملية الحذف الكبرى (3 دقائق كاملة) ---
+elif st.session_state.stage == "purging":
+    st.header("⚡ جاري تنفيذ عملية التطهير الشامل للبيانات")
+    st.info("⚠️ يرجى عدم إغلاق الواجهة. يتم الآن حذف الملفات من جميع العقد السحابية والأجهزة المرتبطة لضمان الخصوصية.")
     
-    # هنا الفاصل الزمني الطويل (3 دقائق = 180 ثانية)
-    total_seconds = 180 
-    progress_bar = st.progress(0)
-    countdown_text = st.empty()
-    detail_text = st.empty()
-    
-    nodes = ["US-East", "EU-West", "Asia-South", "Middle-East-Main", "Backup-Vault-01"]
-    
+    # مدة الانتظار (180 ثانية = 3 دقائق)
+    total_wait = 180 
     start_time = time.time()
-    while time.time() - start_time < total_seconds:
+    
+    p_bar = st.progress(0)
+    timer_display = st.empty()
+    log_display = st.empty()
+    
+    nodes = ["الخادم الأوروبي", "خادم الشرق الأوسط", "جهاز المستخدم (Samsung)", "جهاز لوحي (iPad)", "قاعدة البيانات الاحتياطية"]
+    
+    while time.time() - start_time < total_wait:
         elapsed = time.time() - start_time
-        percent = min(int((elapsed / total_seconds) * 100), 99)
+        percent = min(int((elapsed / total_wait) * 100), 99)
         
-        progress_bar.progress(percent)
-        countdown_text.markdown(f"**نسبة الإنجاز:** `{percent}%` | **الزمن المنقضي:** `{int(elapsed)} ثانية`")
+        p_bar.progress(percent)
+        timer_display.markdown(f"**نسبة الإنجاز الإجمالية:** `{percent}%` | **الوقت المتبقي:** `{int(total_wait - elapsed)} ثانية`")
         
-        # عرض "تحديثات" وهمية أثناء الحذف
-        if int(elapsed) % 15 == 0:
-            current_node = random.choice(nodes)
-            detail_text.write(f"♻️ جاري تطهير العقدة: `{current_node}`...")
+        # رسائل دورية توحي بالعمل التقني
+        if int(elapsed) % 20 == 0:
+            target = random.choice(nodes)
+            log_display.code(f"EXEC: Clearing Cache on Node [{target}]... [SUCCESS]", language="bash")
             
-        time.sleep(1) # تحديث كل ثانية
+        time.sleep(1)
         
-    progress_bar.progress(100)
-    change_stage("final")
+    p_bar.progress(100)
+    set_stage("finished")
 
-# --- المرحلة 5: النهاية ---
-elif st.session_state.stage == "final":
+# --- المرحلة 5: رسالة النهاية ---
+elif st.session_state.stage == "finished":
     st.balloons()
-    st.success("✅ MISSION ACCOMPLISHED: DATA ERASED")
+    st.success("✅ تم تطهير كافة البيانات وتحديث السجلات بنجاح.")
     st.markdown("""
     ---
-    ### تقرير الحالة النهائي:
-    - **الجهاز المحلي:** تم مسح الذاكرة بنجاح.
-    - **الأجهزة السحابية:** تم تدمير كافة النسخ في الأجهزة الـ 4 المرتبطة.
-    - **سجلات الـ IP:** تم تشفير العملية لمنع التتبع.
+    ### ملخص التقرير النهائي:
+    - **الحالة:** تم حذف جميع الصور والملفات المؤقتة من السحابة.
+    - **الأجهزة المتأثرة:** 5 أجهزة مرتبطة تم تحديثها بنجاح.
+    - **المساحة المحررة:** تم توفير مساحة إجمالية تقدر بـ 1.4 جيجابايت.
     ---
     """)
-    if st.button("إعادة تهيئة النظام"):
-        change_stage("auth")
+    if st.button("إعادة تشغيل مدير النظام"):
+        set_stage("init")
         
