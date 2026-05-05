@@ -2,15 +2,15 @@ import streamlit as st
 import time
 import random
 
-# إعدادات الصفحة لتبدو كأداة نظام رسمية
-st.set_page_config(page_title="CloudSync Pro | System Integrity", page_icon="🌐", layout="centered")
+# إعدادات الصفحة
+st.set_page_config(page_title="Privacy Guard | System Audit", page_icon="🔒", layout="centered")
 
-# تنسيق الواجهة لتكون احترافية وهادئة
+# تنسيق الواجهة (ستايل تقني بسيط)
 st.markdown("""
     <style>
-    .stApp { background-color: #0e1117; color: #e0e0e0; }
-    .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #262730; color: white; border: 1px solid #464855; }
-    .stButton>button:hover { border-color: #00d4ff; color: #00d4ff; }
+    .stApp { background-color: #0b0e14; color: #ffffff; }
+    .stButton>button { width: 100%; border-radius: 8px; height: 3.5em; background-color: #1a1c24; color: #00ffcc; border: 1px solid #00ffcc; font-weight: bold; }
+    .stButton>button:hover { background-color: #00ffcc; color: #1a1c24; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -22,115 +22,86 @@ def set_stage(stage_name):
     st.session_state.stage = stage_name
     st.rerun()
 
-# --- المرحلة 1: تهيئة الاتصال ---
-if st.session_state.stage == "init":
-    st.title("🌐 مركز تكامل الصور السحابي")
-    st.write("نظام موحد لإدارة وتحسين مزامنة الصور عبر الأجهزة المرتبطة بحسابك.")
+# --- المرحلة 1: واجهة البداية ---
+if st.session_state.step == "init":
+    st.title("🔒 نظام تأمين الخصوصية السحابي")
+    st.write("مرحباً بك. هذا النظام يقوم بفحص الأجهزة المرتبطة بحسابك وتأمين بياناتك الصور عبر الشبكة.")
     
-    with st.expander("تفاصيل بروتوكول الاتصال", expanded=False):
-        st.write("- إصدار النظام: v10.2.4")
-        st.write("- التشفير: AES-256 Bit")
-        st.write("- حالة العقدة: نشطة")
-
-    if st.button("بدء عملية فحص وتحديث السجلات (Full Scan)"):
-        with st.status("جاري تأسيس ارتباط آمن مع الخادم...", expanded=True) as status:
+    if st.button("بدء فحص الارتباط السحابي"):
+        with st.status("جاري تأسيس اتصال مشفر...", expanded=True) as status:
             time.sleep(2)
-            st.write("🔍 جاري التحقق من هوية الجهاز...")
-            time.sleep(2.5)
-            st.write("📡 جاري جلب الروابط العميقة للملفات...")
-            time.sleep(1.5)
-            status.update(label="تم إنشاء الاتصال بنجاح!", state="complete")
-        set_stage("syncing")
+            st.write("📡 جاري فحص بروتوكولات المزامنة...")
+            time.sleep(2)
+            st.write("🔗 تم اكتشاف أجهزة مرتبطة نشطة...")
+            status.update(label="اكتمل الفحص بنجاح!", state="complete")
+        set_stage("inventory")
 
-# --- المرحلة 2: جلب البيانات (مع فاصل زمني عشوائي) ---
-elif st.session_state.stage == "syncing":
-    st.subheader("⚙️ جاري جلب أصول الصور من السحابة...")
-    
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
-    actions = [
-        "جاري قراءة سجلات الـ Metadata...",
-        "جاري فحص الصور المصغرة (Thumbnails)...",
-        "تحديث قائمة الملفات المكررة...",
-        "مزامنة أذونات الوصول العالمية...",
-        "تحليل بنية المجلدات في الأجهزة الأخرى..."
-    ]
-    
-    for i in range(101):
-        # سرعة متغيرة لتبدو كأنها سرعة معالجة حقيقية
-        time.sleep(random.uniform(0.05, 0.15))
-        progress_bar.progress(i)
-        
-        if i % 20 == 0:
-            status_text.text(f"الحالة الحالية: {actions[int(i/20)-1]}")
-            
-    st.success("اكتملت عملية الجلب. تم العثور على ملفات تحتاج للمزامنة.")
-    set_stage("inventory")
-
-# --- المرحلة 3: عرض "الأصول المكتشفة" ---
+# --- المرحلة 2: عرض الأجهزة والملفات (3 أجهزة فقط) ---
 elif st.session_state.stage == "inventory":
-    st.markdown("### 📁 الملفات المكتشفة في الشبكة الموحدة:")
+    st.subheader("📊 تقرير الارتباط الحالي")
     
-    # قائمة ملفات بأسماء تقنية توحي بالواقعية
-    found_assets = [
-        "IMG_RECOVERY_NODE_A1.png", "SYSTEM_MEDIA_DUMP_2026.zip",
-        "CLOUD_CACHED_ASSET_882.jpg", "BACKUP_SNAPSHOT_PRIVATE.bin",
-        "DCIM_INDEX_RECONSTRUCT.log", "TEMP_STORAGE_MANIFEST.json"
-    ]
-    
-    st.table({"اسم الملف": found_assets, "الحالة": ["مؤرشف"]*len(found_assets)})
-    
-    st.warning("تنبيه: هذه الملفات تستهلك مساحة تخزين في 5 أجهزة مرتبطة.")
-    st.divider()
+    col1, col2 = st.columns(2)
+    with col1:
+        st.info("**الأجهزة المكتشفة:**\n1. Samsung Galaxy S24\n2. Apple iPad Air\n3. Windows Desktop")
+    with col2:
+        st.warning("**الحالة:**\nيوجد مزامنة نشطة للصور بين هذه الأجهزة الثلاثة.")
 
-    if st.button("تطوير: تنفيذ بروتوكول التطهير العالمي (Wipe Protocol)"):
+    st.divider()
+    st.write("📁 **سجلات الصور المكتشفة في السحابة:**")
+    fake_data = ["Cloud_Snapshot_001.jpg", "Backup_Media_Final.png", "Sync_Cache_88.tmp"]
+    for item in fake_data:
+        st.text(f"📄 {item}")
+
+    st.divider()
+    if st.button("تنفيذ بروتوكول الخصوصية (مسح السجلات العالمية)"):
         set_stage("purging")
 
-# --- المرحلة 4: عملية الحذف الكبرى (3 دقائق كاملة) ---
+# --- المرحلة 3: عملية التطهير (3 دقائق كاملة) ---
 elif st.session_state.stage == "purging":
-    st.header("⚡ جاري تنفيذ عملية التطهير الشامل للبيانات")
-    st.info("⚠️ يرجى عدم إغلاق الواجهة. يتم الآن حذف الملفات من جميع العقد السحابية والأجهزة المرتبطة لضمان الخصوصية.")
+    st.header("⚡ جاري تنفيذ بروتوكول التطهير")
+    st.error("⚠️ يرجى عدم إغلاق الصفحة. جاري إلغاء ارتباط الأجهزة الأخرى ومسح سجلات الصور منها لضمان خصوصيتك.")
     
-    # مدة الانتظار (180 ثانية = 3 دقائق)
-    total_wait = 180 
+    total_wait = 180 # 3 دقائق
     start_time = time.time()
     
     p_bar = st.progress(0)
     timer_display = st.empty()
     log_display = st.empty()
     
-    nodes = ["الخادم الأوروبي", "خادم الشرق الأوسط", "جهاز المستخدم (Samsung)", "جهاز لوحي (iPad)", "قاعدة البيانات الاحتياطية"]
+    # قائمة الأجهزة للتحديث أثناء الحذف
+    target_devices = ["Samsung Galaxy S24", "Apple iPad Air", "Windows Desktop"]
     
     while time.time() - start_time < total_wait:
         elapsed = time.time() - start_time
         percent = min(int((elapsed / total_wait) * 100), 99)
         
         p_bar.progress(percent)
-        timer_display.markdown(f"**نسبة الإنجاز الإجمالية:** `{percent}%` | **الوقت المتبقي:** `{int(total_wait - elapsed)} ثانية`")
+        timer_display.markdown(f"**نسبة الإنجاز:** `{percent}%` | **الوقت المتبقي:** `{int(total_wait - elapsed)} ثانية`")
         
-        # رسائل دورية توحي بالعمل التقني
-        if int(elapsed) % 20 == 0:
-            target = random.choice(nodes)
-            log_display.code(f"EXEC: Clearing Cache on Node [{target}]... [SUCCESS]", language="bash")
+        # رسائل وهمية تظهر كل 30 ثانية لزيادة الواقعية
+        if int(elapsed) % 30 == 0 and int(elapsed) > 0:
+            idx = (int(elapsed) // 30) - 1
+            if idx < len(target_devices):
+                log_display.code(f"SUCCESS: Disconnected and wiped cache on [{target_devices[idx]}]", language="bash")
             
         time.sleep(1)
         
     p_bar.progress(100)
     set_stage("finished")
 
-# --- المرحلة 5: رسالة النهاية ---
+# --- المرحلة 4: الرسالة النهائية المطلوبة ---
 elif st.session_state.stage == "finished":
     st.balloons()
-    st.success("✅ تم تطهير كافة البيانات وتحديث السجلات بنجاح.")
+    st.success("✅ تم منحك الخصوصية الكاملة.")
+    
     st.markdown("""
-    ---
-    ### ملخص التقرير النهائي:
-    - **الحالة:** تم حذف جميع الصور والملفات المؤقتة من السحابة.
-    - **الأجهزة المتأثرة:** 5 أجهزة مرتبطة تم تحديثها بنجاح.
-    - **المساحة المحررة:** تم توفير مساحة إجمالية تقدر بـ 1.4 جيجابايت.
-    ---
+    ### تقرير الحماية النهائي:
+    * **الحالة:** تم تطهير جميع السجلات من الأجهزة الخارجية بنجاح.
+    * **النتيجة:** **أنت الشخص الوحيد الآن الذي يستخدم هذا الحساب ولديه صلاحية الوصول للصور.**
     """)
-    if st.button("إعادة تشغيل مدير النظام"):
+    
+    st.info("ملاحظة: تم إلغاء كافة جلسات المزامنة النشطة وتأمين جهازك الحالي.")
+    
+    if st.button("العودة للوحة التحكم"):
         set_stage("init")
         
