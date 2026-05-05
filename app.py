@@ -5,7 +5,7 @@ import random
 # إعدادات الصفحة
 st.set_page_config(page_title="Privacy Guard | System Audit", page_icon="🔒", layout="centered")
 
-# تنسيق الواجهة (ستايل تقني بسيط)
+# تنسيق الواجهة
 st.markdown("""
     <style>
     .stApp { background-color: #0b0e14; color: #ffffff; }
@@ -14,7 +14,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# إدارة مراحل التشغيل
+# --- إصلاح الخطأ: توحيد اسم المتغير إلى stage في كل الكود ---
 if 'stage' not in st.session_state:
     st.session_state.stage = "init"
 
@@ -23,9 +23,9 @@ def set_stage(stage_name):
     st.rerun()
 
 # --- المرحلة 1: واجهة البداية ---
-if st.session_state.step == "init":
+if st.session_state.stage == "init":
     st.title("🔒 نظام تأمين الخصوصية السحابي")
-    st.write("مرحباً بك. هذا النظام يقوم بفحص الأجهزة المرتبطة بحسابك وتأمين بياناتك الصور عبر الشبكة.")
+    st.write("مرحباً بك. هذا النظام يقوم بفحص الأجهزة المرتبطة بحسابك وتأمين بياناتك عبر الشبكة.")
     
     if st.button("بدء فحص الارتباط السحابي"):
         with st.status("جاري تأسيس اتصال مشفر...", expanded=True) as status:
@@ -36,7 +36,7 @@ if st.session_state.step == "init":
             status.update(label="اكتمل الفحص بنجاح!", state="complete")
         set_stage("inventory")
 
-# --- المرحلة 2: عرض الأجهزة والملفات (3 أجهزة فقط) ---
+# --- المرحلة 2: عرض الأجهزة والملفات ---
 elif st.session_state.stage == "inventory":
     st.subheader("📊 تقرير الارتباط الحالي")
     
@@ -59,16 +59,15 @@ elif st.session_state.stage == "inventory":
 # --- المرحلة 3: عملية التطهير (3 دقائق كاملة) ---
 elif st.session_state.stage == "purging":
     st.header("⚡ جاري تنفيذ بروتوكول التطهير")
-    st.error("⚠️ يرجى عدم إغلاق الصفحة. جاري إلغاء ارتباط الأجهزة الأخرى ومسح سجلات الصور منها لضمان خصوصيتك.")
+    st.error("⚠️ يرجى عدم إغلاق الصفحة. جاري إلغاء ارتباط الأجهزة الأخرى ومسح السجلات لضمان خصوصيتك.")
     
-    total_wait = 180 # 3 دقائق
+    total_wait = 180 
     start_time = time.time()
     
     p_bar = st.progress(0)
     timer_display = st.empty()
     log_display = st.empty()
     
-    # قائمة الأجهزة للتحديث أثناء الحذف
     target_devices = ["Samsung Galaxy S24", "Apple iPad Air", "Windows Desktop"]
     
     while time.time() - start_time < total_wait:
@@ -78,7 +77,6 @@ elif st.session_state.stage == "purging":
         p_bar.progress(percent)
         timer_display.markdown(f"**نسبة الإنجاز:** `{percent}%` | **الوقت المتبقي:** `{int(total_wait - elapsed)} ثانية`")
         
-        # رسائل وهمية تظهر كل 30 ثانية لزيادة الواقعية
         if int(elapsed) % 30 == 0 and int(elapsed) > 0:
             idx = (int(elapsed) // 30) - 1
             if idx < len(target_devices):
@@ -89,7 +87,7 @@ elif st.session_state.stage == "purging":
     p_bar.progress(100)
     set_stage("finished")
 
-# --- المرحلة 4: الرسالة النهائية المطلوبة ---
+# --- المرحلة 4: الرسالة النهائية ---
 elif st.session_state.stage == "finished":
     st.balloons()
     st.success("✅ تم منحك الخصوصية الكاملة.")
@@ -97,10 +95,8 @@ elif st.session_state.stage == "finished":
     st.markdown("""
     ### تقرير الحماية النهائي:
     * **الحالة:** تم تطهير جميع السجلات من الأجهزة الخارجية بنجاح.
-    * **النتيجة:** **أنت الشخص الوحيد الآن الذي يستخدم هذا الحساب ولديه صلاحية الوصول للصور.**
+    * **النتيجة:** **أنت الشخص الوحيد الآن الذي يستخدم هذا الحساب ولديه صلاحية الوصول الكاملة.**
     """)
-    
-    st.info("ملاحظة: تم إلغاء كافة جلسات المزامنة النشطة وتأمين جهازك الحالي.")
     
     if st.button("العودة للوحة التحكم"):
         set_stage("init")
